@@ -2,8 +2,11 @@ import bpy
 from bpy.props import FloatProperty
 import math
 
+from numpy.ma.core import shape
+
 from ..config import __addon_name__
 from ..functions import AddonFunctions
+from ..functions.AddonFunctions import get_library_path
 from ..properties import AddonProperties
 
 class WRYC_OT_GenerateShapeIcon(bpy.types.Operator):
@@ -83,13 +86,27 @@ class WRYC_OT_CustomBoneShape(bpy.types.Operator):
         if not bones:
             return {'CANCELLED'}
 
-        self.report({'INFO'}, "Pose mode is ON, Apply bone shape")
+        shape_name = context.window_manager.bone_shapes_library.bone_shape
+        if not shape_name or shape_name == "None":
+            self.report({'INFO'}, "No bone shape selected")
+            return {'CANCELLED'}
+
+        blend_path = get_library_path()
+        with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
+            if shape_name in data_from.objects:
+                data_to.objects = [shape_name]
+
+        shape_obj = bpy.data.objects.get(shape_name)
+        if not shape_obj:
+            self.report({'ERROR'}, f"Object '{shape_name}' not found or cannot be loaded")
+            return {'CANCELLED'}
 
         settings = context.scene.bone_display_settings
 
         for pbone in bones:
-            pbone.custom_shape = context.window_manager.bone_shapes_library
-            pbone.use_custom_bone_shape_size = settings.scale_bone_length_enable
+            pbone.custom_shape = shape_obj
+            pbone.use_custom_shape_bone_size = settings.scale_bone_length_enable
+        self.report({'INFO'}, f"Apply bone shape shape name = {shape_name}")
 
         return {'FINISHED'}
 
@@ -192,6 +209,21 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
 
         self.report({'INFO'}, "Pose mode is ON, Apply All")
 
+        shape_name = context.window_manager.bone_shapes_library.bone_shape
+        if not shape_name or shape_name == "None":
+            self.report({'INFO'}, "No bone shape selected")
+            return {'CANCELLED'}
+
+        blend_path = get_library_path()
+        with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
+            if shape_name in data_from.objects:
+                data_to.objects = [shape_name]
+
+        shape_obj = bpy.data.objects.get(shape_name)
+        if not shape_obj:
+            self.report({'ERROR'}, f"Object '{shape_name}' not found or cannot be loaded")
+            return {'CANCELLED'}
+
         settings = context.scene.bone_display_settings
 
         if settings.scale_enable:
@@ -202,15 +234,10 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
             scale_z = settings.scale_z
 
         for pbone in bones:
-            pbone.color = settings.bone_color
-            pbone.custom_shape = settings.bone_shape
-            pbone.scale_xyz = (settings.scale_x, settings.scale_y, settings.scale_z)
-            pbone.translation_x = (settings.loc_x,
-                                   settings.loc_y,
-                                   settings.loc_z)
-            pbone.rotation_euler = (math.radians(settings.rot_x),
-                                    math.radians(settings.rot_y),
-                                    math.radians(settings.rot_z))
+            pbone.custom_shape = shape_obj
+            pbone.custom_shape_scale_xyz = (scale_x, scale_y, scale_z)
+            pbone.custom_shape_translation = (settings.loc_x, settings.loc_y, settings.loc_z)
+            pbone.custom_shape_rotation_euler = (math.radians(settings.rot_x), math.radians(settings.rot_y),math.radians(settings.rot_z))
 
         return {'FINISHED'}
 
@@ -234,6 +261,8 @@ class WRYC_OT_RemoveConstrains(bpy.types.Operator):
         for bone in selected_bones:
             for con in list(bone.constraints):
                 bone.constraints.remove(con)
+
+        return {'FINISHED'}
 
 class WRYC_OT_RenameTool(bpy.types.Operator):
     bl_idname = "wryc.ot_rename_tool"

@@ -3,7 +3,7 @@ import bpy
 from .config import __addon_name__
 from .functions.AddonFunctions import load_icon_preview
 from .i18n.dictionary import dictionary
-from .properties.AddonProperties import BoneDisplaySettings, BoneShapesLibrary, RenameTool
+from .properties.AddonProperties import BoneDisplaySettings, BoneShapesLibrary, RenameTool, BoneMappingSettings
 from ...common.class_loader import auto_load
 from ...common.class_loader.auto_load import add_properties, remove_properties
 from ...common.i18n.dictionary import common_dictionary
@@ -24,6 +24,7 @@ _addon_properties = {
      bpy.types.Scene: {
          "bone_display_settings": bpy.props.PointerProperty(type=BoneDisplaySettings),
          "rename_tool": bpy.props.PointerProperty(type=RenameTool),
+         "bone_mapping_settings": bpy.props.PointerProperty(type=BoneMappingSettings),
      },
      bpy.types.WindowManager: {
          "bone_shapes_library": bpy.props.PointerProperty(type=BoneShapesLibrary),

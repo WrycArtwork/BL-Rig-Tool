@@ -1,3 +1,4 @@
+import difflib
 import math
 
 import bpy
@@ -229,3 +230,37 @@ def check_pose_mode(context, self):
         return False
 
     return True
+
+def update_selected_target(self, context):
+    if 0 <= self.active_index < len(self.mappings):
+        self.target_import = self.mappings[self.active_index].target
+    else:
+        self.target_import = ""
+
+def update_target_import(self, context):
+    if 0 <= self.active_index < len(self.mappings):
+        tgt_armature = self.target_armature
+        bone_name = self.target_import.strip()
+
+        if bone_name == "None" or (bone_name in tgt_armature.bones):
+            self.mappings[self.active_index].target = bone_name
+        else:
+            print(f"Bone name:{bone_name}is not Valid")
+            update_selected_target(self, context)
+
+def action_items(self, context):
+    actions = bpy.data.actions
+    if not actions:
+        return [("None", "No Action can use", "(No action data in scene)")]
+    else:
+        return [(act.name, act.name, "") for act in actions]
+
+def target_bone_items(self, context, edit_text):
+    arm = self.target_armature
+    if not arm:
+        return []
+
+    tgt_names = [b.name for b in arm.bones]
+    matches = difflib.get_close_matches(edit_text, tgt_names, n=5, cutoff=0.3)
+
+    return [m for m in matches]

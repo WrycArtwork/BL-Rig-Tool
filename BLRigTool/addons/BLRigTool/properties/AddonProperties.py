@@ -33,6 +33,50 @@ class BoneDisplaySettings(PropertyGroup):
     rot_y: FloatProperty(name="Rotate Y", default=0.0)
     rot_z: FloatProperty(name="Rotate Z", default=0.0)
 
+class BoneMapItems(bpy.types.PropertyGroup):
+    source: StringProperty(name="Source Bone")
+    target: StringProperty(name="Target Bone")
+
+class ActionEntry(bpy.types.PropertyGroup):
+    name: StringProperty()
+    enabled: BoolProperty(default=False)
+
+class BoneMappingSettings(bpy.types.PropertyGroup):
+    show_mappings_settings: BoolProperty(default=True)
+
+    mapping_actions: CollectionProperty(type=ActionEntry)
+
+    source_type: EnumProperty(
+        name="Source Type",
+        items=[
+            ('ARMATURE', "Armature", ""),
+            ('ACTION', "Action", ""),
+        ],
+        default='ARMATURE',
+    )
+    source_armature: PointerProperty(
+        type=bpy.types.Armature,
+    )
+    source_action: PointerProperty(
+        type=bpy.types.Action,
+    )
+    target_armature: PointerProperty(
+        type=bpy.types.Armature,
+    )
+    target_import: StringProperty(
+        name="Target Bone",
+        default="",
+        update=AddonFunctions.update_target_import,
+        search=AddonFunctions.target_bone_items,
+        search_options={'SUGGESTION'},
+    )
+
+    mappings: CollectionProperty(type=BoneMapItems)
+    active_index: IntProperty(
+        update=AddonFunctions.update_selected_target
+    )
+    lock_mappings: BoolProperty(default=False)
+
 class RenameTool(PropertyGroup):
 
     rename_target: EnumProperty(

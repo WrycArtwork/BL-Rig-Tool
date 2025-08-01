@@ -76,11 +76,53 @@ class WRYC_PT_GenerateConstraint(BasePanel, bpy.types.Panel):
 @reg_order(2)
 class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
     bl_label = "Rename Tool"
-    bl_idname = "WRYC_PT_vertex_group_tools"
+    bl_idname = "WRYC_PT_rename_tool"
 
     def draw(self, context):
-        props = context.scene.rename_tool
         layout = self.layout
+        props = context.scene.bone_mapping_settings
+
+        row = layout.row()
+        row.prop(props, "show_mappings_settings", text="", icon='TRIA_DOWN' if props.show_mappings_settings else 'TRIA_RIGHT', emboss=False)
+        row.label(text="RetargetAction")
+
+        if props.show_mappings_settings:
+            layout.operator("wryc.ot_select_mapping_actions")
+            layout.label(text="Bone Mapping List")
+            layout.prop(props, "source_type", text="Source Type")
+            if props.source_type == 'ARMATURE':
+                layout.prop(props, "source_armature", text="Armature")
+            else:
+                layout.prop(props, "source_action", text="Action")
+
+            layout.prop(props, "target_armature", text="Target")
+
+            row = layout.row()
+            row.enabled = props.target_armature is not None and (
+                (props.source_type == 'ARMATURE' and props.source_armature is not None) or
+                (props.source_type == 'ACTION' and props.source_action is not None)
+            )
+            row.operator("wryc.ot_bone_mapping_generate")
+
+
+            layout.label(text="Bone Mapping List")
+            layout.template_list("UI_UL_list", "bone_mapping_list", props, "mappings", props, "active_index")
+            layout.operator("wryc.ot_bone_mapping_lock", icon='LOCKED' if props.lock_mappings else 'UNLOCKED')
+
+            row = layout.row()
+            row.enabled =  len(props.mappings) > 0 and props.lock_mappings == False
+            row.prop(props, "target_import")
+
+            row = layout.row()
+            row.enabled = len(props.mappings) > 0
+            row.operator("wryc.ot_bone_mapping_import", icon='IMPORT')
+            row.operator("wryc.ot_bone_mapping_export", icon='EXPORT')
+
+            layout.operator("wryc.ot_apply_mapping_to_actions")
+
+
+        layout = self.layout
+        props = context.scene.rename_tool
         layout.label(text="Replace Name")
 
         layout.prop(props, "rename_target")
@@ -98,4 +140,13 @@ class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
 
         layout.operator("wryc.ot_rename_tool")
 
+
+class UI_UL_list(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_props, index):
+        if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row()
+            row.label(text=item.source)
+            row.label(text=item.target)
+        elif self.layout_type =='GRID':
+            layout.label(text="")
 

@@ -1,3 +1,7 @@
+import difflib
+import json
+from tokenize import group
+
 import bpy
 from bpy.props import FloatProperty
 import math
@@ -6,7 +10,7 @@ from numpy.ma.core import shape
 
 from ..config import __addon_name__
 from ..functions import AddonFunctions
-from ..functions.AddonFunctions import get_library_path
+from ..functions.AddonFunctions import get_library_path, update_target_import
 from ..properties import AddonProperties
 
 class WRYC_OT_GenerateShapeIcon(bpy.types.Operator):
@@ -264,6 +268,229 @@ class WRYC_OT_RemoveConstrains(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class WRYC_OT_SelectMappingActions(bpy.types.Operator):
+    bl_idname = "wryc.ot_select_mapping_actions"
+    bl_label = "Select Mapping Actions"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def invoke(self, context, event):
+        settings = context.scene.bone_mapping_settings
+        exiting_names = {a.name for a in settings.mapping_actions}
+        old_states = {item.name: item.enabled for item in settings.mapping_actions}
+
+        if bpy.data.actions:
+            for action in bpy.data.actions:
+                if not action.users and not action.use_fake_user:
+                    continue
+
+                if action.name not in exiting_names:
+                    item = settings.mapping_actions.add()
+                    item.name = action.name
+                    item.enabled = old_states.get(action.name, False)
+
+        valid_names = {a.name for a in bpy.data.actions}
+        to_remove = [i for i, a in enumerate(settings.mapping_actions) if a.name not in valid_names]
+        for i in reversed(to_remove):
+            settings.mapping_actions.remove(i)
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        actions = context.scene.bone_mapping_settings.mapping_actions
+
+        if not bpy.data.actions:
+            layout.label(text="No actions in scene")
+            return
+
+        row = layout.row(align=True)
+        row.operator("wryc.ot_enable_all_actions", text="Enable All")
+        row.operator("wryc.ot_disable_all_actions", text="Disable All")
+
+        box = layout.box()
+        for entry in actions:
+            box.prop(entry, "enabled", text=entry.name)
+
+    def execute(self, context):
+        settings = context.scene.bone_mapping_settings
+        selected_actions = [a.name for a in settings.mapping_actions if a.enabled]
+        if not selected_actions:
+            self.report({'ERROR'}, "No actions selected.")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+class WRYC_OT_EnableAllActions(bpy.types.Operator):
+    bl_idname = "wryc.ot_enable_all_actions"
+    bl_label = "Enable All Actions"
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        for entry in context.scene.bone_mapping_settings.mapping_actions:
+            entry.enabled = True
+        return {'FINISHED'}
+
+class WRYC_OT_DisableAllActions(bpy.types.Operator):
+    bl_idname = "wryc.ot_disable_all_actions"
+    bl_label = "Disable All Actions"
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        for entry in context.scene.bone_mapping_settings.mapping_actions:
+            entry.enabled = False
+        return {'FINISHED'}
+
+class WRYC_OT_ApplyMappingToActions(bpy.types.Operator):
+    bl_idname = "wryc.ot_apply_mapping_to_actions"
+    bl_label = "Apply Mapping to Actions"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        settings = context.scene.bone_mapping_settings
+        selected_actions = [a.name for a in settings.mapping_actions if a.enabled]
+        bone_mappings = settings.mappings
+        bone_mappings_dict = {m.source: m.target for m in bone_mappings}
+
+        for action_name in selected_actions:
+            action = bpy.data.actions.get(action_name)
+
+            fcurve_to_modify = []
+
+            for fcurve in action.fcurves:
+                data_path = fcurve.data_path
+
+                if 'pose.bones["' in data_path:
+                    try:
+                        start = data_path.find('pose.bones["') + len('pose.bones["')
+                        end = data_path.find('"]', start)
+                        old_bone = data_path[start:end]
+
+                        if old_bone in bone_mappings_dict:
+                            fcurve_to_modify.append((fcurve, old_bone))
+                    except Exception as e:
+                        print(f"Skipping {data_path}({e})")
+
+            rename_count =0
+
+            for fcurve, old_bone in fcurve_to_modify:
+                new_bone = bone_mappings_dict[old_bone]
+                new_path = fcurve.data_path.replace(f'["{old_bone}"]', f'["{new_bone}"]')
+                fcurve.data_path = new_path
+
+                group = action.groups.get(new_bone)
+                if not group:
+                    group = action.groups.new(name=new_bone)
+                fcurve.group = group
+
+                rename_count += 1
+                print(f'renamed {old_bone} to {new_bone}')
+
+        self.report({'INFO'}, f"Handled {len(selected_actions)} Actions" )
+        return {'FINISHED'}
+
+class WRYC_OT_BoneMappingGenerate(bpy.types.Operator):
+    bl_idname = "wryc.ot_bone_mapping_generate"
+    bl_label = "Create Bone List"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.bone_mapping_settings
+        props.mappings.clear()
+
+        src_names = []
+        if props.source_type == 'ARMATURE' and props.source_armature:
+            src_names = [b.name for b in props.source_armature.bones]
+        elif props.source_type == 'ACTION' and props.source_action:
+            for fc in props.source_action.fcurves:
+                if "pose.bones" in fc.data_path:
+                    path = fc.data_path
+                    bone_name = path.split('"')[1]
+                    if bone_name not in src_names:
+                        src_names.append(bone_name)
+
+        tgt_names = [b.name for b in props.target_armature.bones]
+
+        for src_name in src_names:
+            matches = difflib.get_close_matches(src_name, tgt_names, n=1, cutoff=0.3)
+            if matches:
+                item = props.mappings.add()
+                item.source = src_name
+                item.target = matches[0]
+
+        if props.mappings:
+            props.active_index = 0
+            props.target_import = props.mappings[0].target
+        else:
+            props.active_index = -1
+            props.target_import = ""
+
+        self.report({'INFO'}, "Bone Mapping Generated")
+        return {'FINISHED'}
+
+class WRYC_OT_BoneMappingLock(bpy.types.Operator):
+    bl_idname = "wryc.ot_bone_mapping_lock"
+    bl_label = "Lock Mapping List"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.bone_mapping_settings
+        props.lock_mappings = not props.lock_mappings
+        return {'FINISHED'}
+
+class WRYC_OT_TargetBoneImport(bpy.types.Operator):
+    bl_idname = "wryc.ot_target_bone_import"
+    bl_label = "Target Bone :"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.bone_mapping_settings
+
+        if 0 <= props.active_index < len(props.mappings):
+            new_target = AddonProperties.BoneMappingSettings.target_import.strip()
+            if new_target:
+                props.mappings[props.active_index].target = new_target
+                self.report({'INFO'}, f"Mapping updated to: {new_target}")
+                return {'FINISHED'}
+        else:
+            self.report({'WARNING'}, "Mapping not found.")
+            return {'CANCELLED'}
+
+class WRYC_OT_BoneMappingExport(bpy.types.Operator):
+    bl_idname = "wryc.ot_bone_mapping_export"
+    bl_label = "Export"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath: bpy.props.StringProperty(subtype='FILE_PATH')
+
+    def execute(self, context):
+        props = context.scene.bone_mapping_settings
+        data = [{"source": m.source, "target":m.target} for m in props.mappings]
+        with open(self.filepath, "w", encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        self.report({'INFO'}, "Bone Mapping Exported")
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+class WRYC_OT_BoneMappingImport(bpy.types.Operator):
+    bl_idname = "wryc.ot_bone_mapping_import"
+    bl_label = "Import"
+
+    filepath: bpy.props.StringProperty(subtype='FILE_PATH')
+
+    def execute(self, context):
+        props = context.scene.bone_mapping_settings
+        with open(self.filepath, "r", encoding='utf-8') as f:
+            data = json.load(f)
+        props.mappings.clear()
+        for item in data:
+            map_item = props.mappings.add()
+            map_item.source = item["source", ""]
+            map_item.target = item["target", ""]
+        props.active_index = 0
+        self.report({'INFO'}, "Bone Mapping Imported")
+        return {'FINISHED'}
+
 class WRYC_OT_RenameTool(bpy.types.Operator):
     bl_idname = "wryc.ot_rename_tool"
     bl_label = "Apply "
@@ -277,7 +504,8 @@ class WRYC_OT_RenameTool(bpy.types.Operator):
 
         for obj in context.selected_objects:
             if obj.type != 'MESH':
-                continue
+                self.report({'ERROR'}, "Please selected Mesh Object")
+                return {'CANCELLED'}
 
             if target == 'VERTEX_GROUP':
                 data_list = obj.vertex_groups
@@ -287,7 +515,8 @@ class WRYC_OT_RenameTool(bpy.types.Operator):
                     continue
                 data_list = obj.data.shape_keys.key_blocks
             else:
-                continue
+                return {'CANCELLED'}
+
 
             for item in data_list:
                 old_name = item.name
@@ -315,5 +544,11 @@ class WRYC_OT_RenameTool(bpy.types.Operator):
                     renamed_count += 1
                     self.report({'INFO'}, f"{obj.name} has been renamed to '{new_name}'")
 
-            self.report({'INFO'}, f"{renamed_count} vertex group names have been renamed")
-            return {'FINISHED'}
+        self.report({'INFO'}, f"{renamed_count} vertex group names have been renamed")
+        return {'FINISHED'}
+
+    def get_Target_bone_enum(self, context):
+        arm = self.target_armature
+        if arm:
+            return [(b.name, b.name, "") for b in arm.bones]
+        return []

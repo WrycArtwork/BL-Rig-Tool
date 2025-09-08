@@ -206,7 +206,7 @@ class ExportToUnreal(PropertyGroup):
         name="Export Type",
         items=[
             ('SELECTED',"Selected Action", "Selected Action"),
-            ('Batch', "Batch", "Batch"),
+            ('BATCH', "Batch", "Batch"),
             ('ALL', "All Actions", "All Actions"),
         ],
         default='SELECTED'

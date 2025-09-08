@@ -1185,19 +1185,11 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
                 arm.select_set(True)
                 bpy.context.view_layer.objects.active = arm
 
-                '''nla_strips = []
-                if arm.animation_data and arm.animation_data.nla_tracks:
-                    for track in arm.animation_data.nla_tracks:
-                        for strip in track.strips:
-                            nla_strips.append((strip, strip.mute))'''
-
                 if settings.export_type == "SELECTED":
                     action = arm.animation_data.action if arm.animation_data else None
                     if not action:
                         self.report({'ERROR'}, "No active action in selected armature")
                     else:
-                        '''for strip,_ in nla_strips:
-                            strip.mute = True'''
 
                         export_name = settings.action_prefix + action.name
                         act_file = bpy.path.abspath(
@@ -1207,17 +1199,13 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
                         AddonFunctions.do_export(
                             context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True, bake_all=False
                         )
-                        '''for strip,mute_state in nla_strips:
-                            strip.mute = mute_state'''
+
                         self.report({'INFO'}, f"Exported selected action successfully: {act_file}")
     
                 elif settings.export_type == "BATCH":
-                    for action in arm.animation_data.actions:
+                    for action in bpy.data.actions:
                         if not action:
                             continue
-
-                        '''for strip, _ in nla_strips:
-                            strip.mute = True'''
 
                         export_name = settings.action_prefix + action.name
                         act_file = bpy.path.abspath(
@@ -1228,8 +1216,6 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
                             context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01,bake_anim=True,bake_all=False
                         )
 
-                    '''for strip,mute_state in nla_strips:
-                        strip.mute = mute_state'''
                     self.report({'INFO'}, f"Exported action by batch successfully")
     
                 elif settings.export_type == "ALL":
@@ -1242,7 +1228,7 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
                         context, filepath=export_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True,bake_all=True
                     )
                     self.report({'INFO'}, f"Exported all action successfully")
-    
+
                 else:
                     self.report({'INFO'}, "Action path is empty, skip action export")
 

@@ -69,6 +69,12 @@ class WRYC_PT_GenerateConstraint(BasePanel, bpy.types.Panel):
         layout.label(text="Remove Constraints")
         layout.operator("wryc.ot_remove_constrains")
 
+        layout.label(text="Add Constraints")
+        layout.operator("wryc.ot_create_arm_controller")
+        layout.operator("wryc.ot_create_leg_controller")
+        #layout.operator("wryc.ot_create_foot_controller")
+        layout.operator("wryc.ot_create_finger_controller")
+
     @classmethod
     def poll(cls, context: bpy.types.Context):
         return True
@@ -140,7 +146,7 @@ class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
 
         layout.operator("wryc.ot_rename_tool")
 
-
+#__RETARGET LIST__
 class UI_UL_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_props, index):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
@@ -149,4 +155,6 @@ class UI_UL_list(bpy.types.UIList):
             row.label(text=item.target)
         elif self.layout_type =='GRID':
             layout.label(text="")
+
+
 

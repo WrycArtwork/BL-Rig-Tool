@@ -4,7 +4,7 @@ bl_info = {
     "name": 'BL Rig Tool',
     "author": 'WRYC',
     "blender": (4, 0, 2),
-    "version": (0, 0, 1),
+    "version": (0, 0, 3),
     "description": 'Rig tool for Blender',
     "doc_url": '[documentation url]',
     "support": 'COMMUNITY',

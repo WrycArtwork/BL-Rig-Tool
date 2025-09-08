@@ -1,14 +1,36 @@
 import difflib
 import math
+from audioop import cross
 
 import bpy
 import os
 
 import mathutils
-from Cython.Compiler.Naming import self_cname
 
+def get_selected_bones(context, self = None):
+    pbone = context.selected_pose_bones
+
+    if not pbone:
+        if self:
+            self.report({'ERROR'}, "No selected Bones")
+        return None
+    return pbone
+
+def check_pose_mode(context, self):
+    arm_obj = context.object
+
+    if arm_obj is None:
+        self.report({'WARNING'}, "Please select an Object")
+        return False
+
+    if arm_obj.type != 'ARMATURE' or context.mode != 'POSE':
+        self.report({'WARNING'}, "Please select an Armature Object and into Pose Mode")
+        return False
+
+    return True
+
+#__CUSTOM DISPLAY SHAPE__
 preview_collections = {}
-
 def get_icon_folder():
     return os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets", "icons"))
 
@@ -209,28 +231,190 @@ def get_bone_shapes_library(self, context):
 
     return items
 
-def get_selected_bones(context, self = None):
-    pbone = context.selected_pose_bones
+#__GENERATE CONSTRAINT__
 
-    if not pbone:
-        if self:
-            self.report({'ERROR'}, "No selected Bones")
-        return None
-    return pbone
+def get_or_create_constraint(pb, prefix, ctype):
+    con = None
+    for existing in pb.constraints:
+        if existing.name.startswith(prefix) and existing.type == ctype:
+            con = existing
+            break
+    if con is None:
+        con = pb.constraints.new(type=ctype)
+        con.name = f"{prefix}{ctype.replace('_', ' ').title()}"
+    return con
 
-def check_pose_mode(context, self):
-    arm_obj = context.object
+def ensure_target(obj, source_name, target_name, shape_name="None", parent_name=None, use_connect=None, position=None, length=0.0):
+    arm = obj.data
 
-    if arm_obj is None:
-        self.report({'WARNING'}, "Please select an Object")
-        return False
+    if hasattr(source_name, "name"):
+        source_name = source_name.name
+    if hasattr(target_name, "name"):
+        target_name = target_name.name
+    if hasattr(parent_name, "name"):
+        parent_name = parent_name.name
 
-    if arm_obj.type != 'ARMATURE' or context.mode != 'POSE':
-        self.report({'WARNING'}, "Please select an Armature Object and into Pose Mode")
-        return False
+    if target_name in arm.bones:
+        return obj.pose.bones[target_name]
 
-    return True
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb_src = arm.edit_bones[source_name]
+    new_bone = arm.edit_bones.new(target_name)
 
+    src_vec = eb_src.tail - eb_src.head
+    src_len = src_vec.length
+    if src_len <= 1e-8:
+        src_vec = mathutils.Vector((0, 0, 0))
+        src_len = 1.0
+
+    if position is not None:
+        head = position
+        use_len = (length if (length is not None and length > 1e-8) else src_len)
+        dir_n = src_vec.normalized()
+        tail = head + dir_n * use_len
+    else:
+        head = eb_src.head
+        tail = eb_src.tail
+    new_bone.head = head
+    new_bone.tail = tail
+    new_bone.roll = eb_src.roll
+    new_bone.use_deform = False
+
+
+    if parent_name is not None:
+        if parent_name == "":
+            new_bone.parent = None
+            new_bone.use_connect = False
+        else:
+            new_bone.parent = arm.edit_bones[parent_name]
+            new_bone.use_connect = bool(use_connect) if use_connect is not None else False
+    else:
+        new_bone.parent = eb_src.parent
+        new_bone.use_connect = bool(use_connect) if use_connect is not None else eb_src.use_connect
+
+    bpy.ops.object.mode_set(mode='POSE')
+    pb_new = obj.pose.bones[target_name]
+
+    if shape_name and shape_name != "None":
+        blend_path = get_library_path()
+        shape_obj = bpy.data.objects.get(shape_name)
+        if not shape_obj:
+            with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
+                if shape_name in data_from.objects:
+                    data_to.objects = [shape_name]
+            shape_obj = bpy.data.objects.get(shape_name)
+        if shape_obj:
+            pb_new.custom_shape = shape_obj
+
+    return pb_new
+
+def ensure_foot_ob_bone(obj, source_name, target_name, shape_name="None", ):
+    arm = obj.data
+
+    if hasattr(source_name, "name"):
+        source_name = source_name.name
+    if hasattr(target_name, "name"):
+        target_name = target_name.name
+
+    if target_name in arm.bones:
+        return obj.pose.bones[target_name]
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb_src = arm.edit_bones[source_name]
+    new_bone = arm.edit_bones.new(target_name)
+
+    new_bone.head = eb_src.tail
+    new_bone.roll = eb_src.roll
+    new_bone.tail = mathutils.Vector((
+        new_bone.head.x,
+        new_bone.head.y,
+        obj.location.z,
+    ))
+    new_bone.use_deform = False
+
+    bpy.ops.object.mode_set(mode='POSE')
+    pb_new = obj.pose.bones[target_name]
+
+    if shape_name and shape_name != "None":
+        blend_path = get_library_path()
+        shape_obj = bpy.data.objects.get(shape_name)
+        if not shape_obj:
+            with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
+                if shape_name in data_from.objects:
+                    data_to.objects = [shape_name]
+            shape_obj = bpy.data.objects.get(shape_name)
+        if shape_obj:
+            pb_new.custom_shape = shape_obj
+
+    return pb_new
+
+
+def compute_pole_position(obj, upper_name, lower_name, end_name, direction="X+", distance=0.5):
+    pb_upper = obj.pose.bones[upper_name]
+    pb_lower = obj.pose.bones[lower_name]
+    pb_end = obj.pose.bones[end_name]
+
+    u = obj.matrix_world @ pb_upper.head
+    l = obj.matrix_world @ pb_lower.head
+    e = obj.matrix_world @ pb_end.head
+
+    axis_map = {
+        "X+": pb_lower.x_axis,
+        "X-": -pb_lower.x_axis,
+        "Y+": pb_lower.y_axis,
+        "Y-": -pb_lower.y_axis,
+        "Z+": pb_lower.z_axis,
+        "Z-": -pb_lower.z_axis,
+    }
+
+    if direction not in axis_map:
+        direction = "X+"
+
+    pole_dir_local = axis_map[direction].normalized()
+    pole_dir_world = obj.matrix_world.to_3x3() @ pole_dir_local
+
+    len = (e - u).length
+    pole_pos = u + pole_dir_world * (len * distance)
+
+    return pole_pos
+
+def compute_pole_angle(obj, upper_name, end_name, pole_pos_world):
+    upper = obj.pose.bones[upper_name]
+    end = obj.pose.bones[end_name]
+
+    upper_matrix = upper.bone.matrix_local
+    upper_matrix_inv = upper_matrix.inverted()
+    pole_local = upper_matrix_inv @ pole_pos_world
+    head_local = upper_matrix_inv @ upper.head
+    tail_local = upper_matrix_inv @ upper.tail
+    end_tail_local = upper_matrix_inv @ end.tail
+
+    pole_normal = (end_tail_local - head_local).cross(pole_local - head_local)
+    bone_dir = (tail_local - head_local).normalized()
+
+    projected_pole_axis = pole_normal.cross(tail_local - head_local)
+
+    x_axis = mathutils.Vector((1, 0, 0))
+
+    angle = x_axis.angle(projected_pole_axis)
+    if x_axis.cross(projected_pole_axis).dot(bone_dir) > 0:
+        angle = -angle
+
+    return angle
+
+
+def collect_bone_chain(root_pbone):
+    chain = []
+    def recure(pb):
+        chain.append(pb)
+        for child in pb.children:
+            recure(child)
+    recure(root_pbone)
+    return chain
+
+
+
+#__RENAME TOOL__
 def update_selected_target(self, context):
     if 0 <= self.active_index < len(self.mappings):
         self.target_import = self.mappings[self.active_index].target
@@ -242,25 +426,48 @@ def update_target_import(self, context):
         tgt_armature = self.target_armature
         bone_name = self.target_import.strip()
 
-        if bone_name == "None" or (bone_name in tgt_armature.bones):
+        if bone_name == "" or bone_name =="None":
+            self.mappings[self.active_index].target = ""
+        elif bone_name in tgt_armature.bones:
             self.mappings[self.active_index].target = bone_name
         else:
             print(f"Bone name:{bone_name}is not Valid")
             update_selected_target(self, context)
-
-def action_items(self, context):
-    actions = bpy.data.actions
-    if not actions:
-        return [("None", "No Action can use", "(No action data in scene)")]
-    else:
-        return [(act.name, act.name, "") for act in actions]
 
 def target_bone_items(self, context, edit_text):
     arm = self.target_armature
     if not arm:
         return []
 
+    if not edit_text.strip():
+        return []
+
     tgt_names = [b.name for b in arm.bones]
     matches = difflib.get_close_matches(edit_text, tgt_names, n=5, cutoff=0.3)
 
     return [m for m in matches]
+
+#__EXPORT TOOL__
+def do_export(context, filepath, object_type={'ARMATURE'}, scale=1.0, bake_anim=False, bake_all=False):
+    settings = context.scene.export_to_unreal
+
+    bpy.ops.export_scene.fbx(
+        object_types=object_type,
+        filepath=filepath,
+        use_selection=True,
+        apply_unit_scale=True,
+        global_scale=scale,
+        bake_anim_use_all_bones=True,
+        use_armature_deform_only=settings.only_deform,
+        add_leaf_bones=settings.add_leaf,
+        apply_scale_options='FBX_SCALE_ALL',
+        armature_nodetype='ROOT',
+        primary_bone_axis=settings.primary_bone_axis,
+        secondary_bone_axis=settings.secondary_bone_axis,
+        axis_forward=settings.axis_forward,
+        axis_up=settings.axis_up,
+        bake_anim=bake_anim,
+        bake_anim_use_all_actions=bake_all,
+        bake_anim_force_startend_keying=True,
+        bake_anim_use_nla_strips=False,
+    )

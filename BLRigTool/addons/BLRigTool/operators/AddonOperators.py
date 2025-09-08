@@ -1,18 +1,20 @@
 import difflib
 import json
-from tokenize import group
+import os
+from itertools import chain
+from re import search, split
 
 import bpy
-from bpy.props import FloatProperty
 import math
 
-from numpy.ma.core import shape
+from bpy_extras.io_utils import ExportHelper
 
 from ..config import __addon_name__
 from ..functions import AddonFunctions
-from ..functions.AddonFunctions import get_library_path, update_target_import
+from ..functions.AddonFunctions import get_library_path
 from ..properties import AddonProperties
 
+#__CUSTOM DISPLAY SHAPE__
 class WRYC_OT_GenerateShapeIcon(bpy.types.Operator):
     bl_idname = "wryc.ot_generate_shape_icon"
     bl_label = "Generate Icon"
@@ -245,6 +247,7 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
 
         return {'FINISHED'}
 
+#__GENERATE CONSTRAINTS__
 class WRYC_OT_RemoveConstrains(bpy.types.Operator):
     bl_idname = "wryc.ot_remove_constrains"
     bl_label = "Remove Constraints"
@@ -268,6 +271,484 @@ class WRYC_OT_RemoveConstrains(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class WRYC_OT_CreateFingerController(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_finger_controller"
+    bl_label = "Finger"
+    bl_description = "Create finger controller"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    root_bone: bpy.props.StringProperty(name="Root Bone")
+    target_bone: bpy.props.StringProperty(name="Target Bone")
+
+
+    def invoke(self, context, event):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+        if obj and obj.type == 'ARMATURE':
+            layout.label(text="Basic Bone")
+            layout.prop_search(self, "root_bone", obj.data, "bones", text="Root Bone")
+
+            layout.label(text="Control Bone")
+            layout.prop_search(self, "target_bone", obj.data, "bones", text="TB Bone")
+
+            sub = layout.row()
+            sub.enabled = False
+            sub.label(text="If not select Control Bone, will generate new Control Bone")
+
+            row = layout.row()
+            row.enabled = bool(not self.target_bone)
+            row.prop(context.window_manager.bone_shapes_library, "finger_bone_shape", expand=False, text="Target Bone Shape")
+        else:
+            layout.label(text="Select an Armature", icon="ERROR")
+
+    def execute(self, context):
+        obj = context.object
+
+        if not self.root_bone:
+            self.report({'ERROR'}, "Please select the first bone in the finger chain")
+            return {'CANCELLED'}
+
+        root_name = self.root_bone
+
+        raw_target_name = self.target_bone.strip() if self.target_bone else f"TB_{root_name}"
+        target_name = AddonFunctions.ensure_target(
+            obj,
+            root_name,
+            raw_target_name,
+            context.window_manager.bone_shapes_library.finger_bone_shape,
+            None,
+            False,
+        )
+
+        chain = AddonFunctions.collect_bone_chain(obj.pose.bones[root_name])
+
+        for pb in chain:
+            con = AddonFunctions.get_or_create_constraint(
+                pb,
+                "FINGER - ",
+                "COPY_ROTATION"
+            )
+            con.target = obj
+            con.subtarget = target_name
+            con.target_space = 'LOCAL'
+            con.owner_space = 'LOCAL'
+            con.mix_mode = 'BEFORE'
+
+        self.report({'INFO'}, f"Generate Constraint For Finger")
+        return {'FINISHED'}
+
+class WRYC_OT_CreateArmController(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_arm_controller"
+    bl_label = "Arm"
+    bl_description = "Generate Arm Controller"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    hand: bpy.props.StringProperty(name="Hand Bone")
+    arm_length: bpy.props.IntProperty(name="Arm Length", default=2, min=2)
+
+    target_elbow: bpy.props.StringProperty(name="TB Elbow")
+    target_wrist: bpy.props.StringProperty(name="TB Wrist")
+    pole_direction: bpy.props.EnumProperty(
+        name="Pole Direction",
+        items=[
+            ("X+", "+X", "Positive X axis"),
+            ("X-", "-X", "Negative X axis"),
+            ("Y+", "+Y", "Positive Y axis"),
+            ("Y-", "-Y", "Negative Y axis"),
+            ("Z+", "+Z", "Positive Z axis"),
+            ("Z-", "-Z", "Negative Z axis")
+        ],
+        default="X+"
+    )
+
+    def invoke(self, context, event):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+
+        if obj and obj.type == 'ARMATURE':
+            layout.label(text="Basic Bone")
+            layout.prop_search(self, "hand", obj.data, "bones", text="Hand")
+            layout.prop(self, "arm_length")
+
+            layout.label(text="Control Bone")
+            layout.prop_search(self, "target_elbow", obj.data, "bones", text="Elbow")
+            layout.prop_search(self, "target_wrist", obj.data, "bones", text="Wrist")
+
+            sub = layout.row()
+            sub.enabled = False
+            sub.label(text="If not select Control Bone, will generate new Control Bone")
+
+            layout.prop(self, "pole_direction")
+
+            row = layout.row()
+            row.enabled = bool(not self.target_elbow)
+            layout.prop(context.window_manager.bone_shapes_library, "arm_elbow_shape", expand=False, text="Elbow Shape")
+
+            row = layout.row()
+            row.enabled = bool(not self.target_wrist)
+            layout.prop(context.window_manager.bone_shapes_library, "arm_hand_shape", expand=False, text="Hand Shape")
+        else:
+            layout.label(text="Select an Armature", icon="ERROR")
+
+    def execute(self, context):
+        obj = context.object
+
+        if not self.hand:
+            self.report({'ERROR'}, f"Please select the hand bone")
+            return {'CANCELLED'}
+
+        chain = []
+        pb = obj.pose.bones.get(self.hand)
+        if not pb:
+            self.report({'ERROR'}, f"Hand Bone {self.hand} not found")
+            return {'CANCELLED'}
+
+        chain.append(pb)
+        while pb.parent and len(chain) <self.arm_length + 1:
+            pb = pb.parent
+            chain.append(pb)
+
+        if len(chain) < self.arm_length + 1:
+            self.report({'ERROR'}, f"Arm Length {self.arm_length} is too short")
+            return {'CANCELLED'}
+
+        hand_pb = chain[0]
+        lower_pb = chain[1]
+        upper_pb = chain[-1]
+
+        hand_name = hand_pb.name
+        lower_name = lower_pb.name
+        upper_name = upper_pb.name
+
+        raw_target_wrist = self.target_wrist.strip() if self.target_wrist else f"TB_{hand_name}"
+        target_wrist = AddonFunctions.ensure_target(
+            obj,
+            hand_name,
+            raw_target_wrist,
+            context.window_manager.bone_shapes_library.arm_hand_shape,
+            "",
+            False,
+        )
+
+        if not self.target_elbow.strip():
+            pole_pos = AddonFunctions.compute_pole_position(
+                obj,
+                upper_name,
+                lower_name,
+                hand_name,
+                direction=self.pole_direction,
+            )
+            target_elbow = AddonFunctions.ensure_target(
+                obj,
+                upper_name,
+                f"TB_{upper_name}",
+                context.window_manager.bone_shapes_library.arm_elbow_shape,
+                parent_name="",
+                position=pole_pos,
+            )
+        else:
+            raw_target_elbow = self.target_elbow.strip()
+            target_elbow = AddonFunctions.ensure_target(
+                obj,
+                upper_name,
+                raw_target_elbow,
+                parent_name="",
+                use_connect=False,
+            )
+        pole_pos = obj.matrix_world @ target_elbow.head
+        pole_angle = AddonFunctions.compute_pole_angle(
+            obj,
+            upper_name,
+            hand_name,
+            pole_pos,
+        )
+
+        wrist_name = target_wrist.name
+        elbow_name = target_elbow.name
+
+        con = AddonFunctions.get_or_create_constraint(lower_pb, "ARM - ", 'IK')
+        con.target = obj
+        con.subtarget = wrist_name
+        con.pole_target = obj
+        con.pole_subtarget = elbow_name
+        if not self.target_elbow.strip():
+            con.pole_angle = pole_angle
+        else:
+            con.pole_angle = 0.0
+        con.chain_count = self.arm_length
+        con.use_tail = True
+        con.use_stretch = False
+        con.weight = 1.0
+        con.influence = 1.0
+
+        con = AddonFunctions.get_or_create_constraint(hand_pb, "TARGET - ", 'COPY_ROTATION')
+        con.target = obj
+        con.subtarget = wrist_name
+        con.use_x = con.use_y = con.use_z = True
+        con.target_space = 'WORLD'
+        con.owner_space = 'WORLD'
+        con.mix_mode = 'REPLACE'
+        con.influence = 1.0
+
+        self.report({'INFO'}, f"Generated Controller for Arm")
+        return {'FINISHED'}
+
+class WRYC_OT_CreateLegController(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_leg_controller"
+    bl_label = "Leg"
+    bl_description = "Generate Leg Controller"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    foot: bpy.props.StringProperty(name="Foot Bone")
+    leg_length: bpy.props.IntProperty(name="Leg Length", default=2, min=2)
+
+    target_knee: bpy.props.StringProperty(name="TB Knee")
+    target_ankle: bpy.props.StringProperty(name="GB Ankle")
+    offset_ankle: bpy.props.StringProperty(name="OB Ankle")
+
+    pole_direction: bpy.props.EnumProperty(
+        name="Pole Direction",
+        items=[
+            ("X+", "+X", "Positive X axis"),
+            ("X-", "-X", "Negative X axis"),
+            ("Y+", "+Y", "Positive Y axis"),
+            ("Y-", "-Y", "Negative Y axis"),
+            ("Z+", "+Z", "Positive Z axis"),
+            ("Z-", "-Z", "Negative Z axis")
+        ],
+        default="X+"
+    )
+
+    def invoke(self, context, event):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+
+        if obj and obj.type == 'ARMATURE':
+            layout.label(text="Basic Bone")
+            layout.prop_search(self, "foot", obj.data, "bones", text="Foot")
+            layout.prop(self, "leg_length")
+
+            layout.label(text="Control Bone")
+            layout.prop_search(self, "target_knee", obj.data, "bones", text="Knee")
+            layout.prop_search(self, "target_ankle", obj.data, "bones", text="Ankle")
+            layout.prop_search(self, "offset_ankle", obj.data, "bones", text="Offset Ankle")
+
+            sub = layout.row()
+            sub.enabled = False
+            sub.label(text="If not select Control Bone, will generate new Control Bone")
+
+            layout.prop(self, "pole_direction")
+
+            row = layout.row()
+            row.enabled = bool(not self.target_knee)
+            layout.prop(context.window_manager.bone_shapes_library, "leg_knee_shape", expand=False, text="Knee Shape")
+
+            row = layout.row()
+            row.enabled = bool(not self.target_ankle)
+            layout.prop(context.window_manager.bone_shapes_library, "leg_ankle_shape", expand=False, text="Ankle Shape")
+
+            row = layout.row()
+            row.enabled = bool(not self.offset_ankle)
+            layout.prop(context.window_manager.bone_shapes_library, "leg_offset_shape", expand=False, text="Ankle Offset Shape")
+        else:
+            layout.label(text="Select an Armature", icon="ERROR")
+
+    def execute(self, context):
+        obj = context.object
+
+        if not self.foot:
+            self.report({'ERROR'}, f"Please select the foot bone")
+            return {'CANCELLED'}
+
+        chain = []
+        pb = obj.pose.bones.get(self.foot)
+        if not pb:
+            self.report({'ERROR'}, f"Hand Bone {self.foot} not found")
+            return {'CANCELLED'}
+
+        chain.append(pb)
+        while pb.parent and len(chain) < self.leg_length + 1:
+            pb = pb.parent
+            chain.append(pb)
+
+        if len(chain) < self.leg_length + 1:
+            self.report({'ERROR'}, f"Leg Length {self.leg_length} is too short")
+            return {'CANCELLED'}
+
+        foot_pb = chain[0]
+        calf_pb = chain[1]
+        thigh_pb = chain[-1]
+
+        foot_name = foot_pb.name
+        calf_name = calf_pb.name
+        thigh_name = thigh_pb.name
+
+        raw_offset_ankle = self.offset_ankle.strip() if self.offset_ankle else f"OB_{foot_name}"
+        offset_ankle = AddonFunctions.ensure_foot_ob_bone(
+            obj,
+            calf_name,
+            raw_offset_ankle,
+            context.window_manager.bone_shapes_library.leg_offset_shape,
+        )
+        offset_name = offset_ankle.name
+
+        raw_target_ankle = self.target_ankle.strip() if self.target_ankle else f"GB_{foot_name}"
+        target_ankle = AddonFunctions.ensure_target(
+            obj,
+            offset_ankle,
+            raw_target_ankle,
+            context.window_manager.bone_shapes_library.leg_ankle_shape,
+            "",
+            False,
+        )
+        ankle_name = target_ankle.name
+
+        if not self.target_knee.strip():
+            pole_pos = AddonFunctions.compute_pole_position(
+                obj,
+                thigh_name,
+                calf_name,
+                foot_name,
+                direction=self.pole_direction,
+            )
+            target_knee = AddonFunctions.ensure_target(
+                obj,
+                thigh_name,
+                f"TB_{thigh_name}",
+                parent_name="",
+                position=pole_pos,
+            )
+        else:
+            raw_target_knee = self.target_knee.strip()
+            target_knee = AddonFunctions.ensure_target(
+                obj,
+                thigh_name,
+                raw_target_knee,
+                context.window_manager.bone_shapes_library.arm_knee_shape,
+                "",
+                use_connect=False,
+            )
+        knee_name = target_knee.name
+
+
+        pole_pos = obj.matrix_world @ target_knee.head
+        pole_angle = AddonFunctions.compute_pole_angle(
+            obj,
+            thigh_name,
+            calf_name,
+            pole_pos,
+        )
+
+        con = AddonFunctions.get_or_create_constraint(calf_pb, "LEG - ", 'IK')
+        con.target = obj
+        con.subtarget = ankle_name
+        con.pole_target = obj
+        con.pole_subtarget = knee_name
+        if not self.target_knee.strip():
+            con.pole_angle = pole_angle
+        else:
+            con.pole_angle = 0.0
+        con.chain_count = self.leg_length
+        con.use_tail = True
+        con.use_stretch = False
+        con.weight = 1.0
+        con.influence = 1.0
+
+        con = AddonFunctions.get_or_create_constraint(foot_pb, "OFFSET - ", 'COPY_TRANSFORMS')
+        con.target = obj
+        con.subtarget = offset_name
+        con.target_space = 'LOCAL_OWNER_ORIENT'
+        con.owner_space = 'LOCAL_WITH_PARENT'
+        con.mix_mode = 'AFTER_FULL'
+        con.influence = 1.0
+
+        con = AddonFunctions.get_or_create_constraint(offset_ankle, "TARGET - ", 'COPY_ROTATION')
+        con.target = obj
+        con.subtarget = ankle_name
+        con.use_x = con.use_y = con.use_z = True
+        con.target_space = 'WORLD'
+        con.owner_space = 'WORLD'
+        con.mix_mode = 'REPLACE'
+        con.influence = 1.0
+
+        self.report({'INFO'}, f"Generated Controller for LEG")
+        return {'FINISHED'}
+
+class WRYC_OT_CreateFootController(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_foot_controller"
+    bl_label = "Foot"
+    bl_description = "Create foot controller"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    foot = bpy.props.StringProperty(name="Foot Bone")
+    ball = bpy.props.StringProperty(name="Ball Bone")
+
+    target_ankle = bpy.props.StringProperty(name="Target Ankle")
+    target_heel = bpy.props.StringProperty(name="Target Foot")
+    target_ball = bpy.props.StringProperty(name="Target Ball")
+    target_roll = bpy.props.StringProperty(name="Target Roll")
+
+    def invoke(self, context, event):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+
+        if obj and obj.type == 'ARMATURE':
+            layout.label(text="Basic Bone")
+            layout.prop_search(self, "foot", obj.data, "bones", text="Foot")
+            layout.prop_search(self, "ball", obj.data, "bones", text="Ball")
+
+            layout.label(text="Control Bone")
+            layout.prop_search(self, "target_ankle", obj.data, "bones", text="GB Ankle")
+            layout.prop_search(self, "target_heel", obj.data, "bones", text="TB Heel")
+            layout.prop_search(self, "target_ball", obj.data, "bones", text="CB Ball")
+            layout.prop_search(self, "target_roll", obj.data, "bones", text="CB Roll")
+
+            sub = layout.row()
+            sub.enabled = False
+            sub.label(text="If not select Control Bone, will generate new Control Bone")
+
+            row = layout.row()
+            row.enabled = bool(not self.target_ankle)
+            layout.prop(context.window_manager.bone_shapes_library, "foot_ankle_shape", expand=False, text="Ankle Shape")
+
+            row = layout.row()
+            row.enabled = bool(not self.target_heel)
+            layout.prop(context.window_manager.bone_shapes_library, "foot_heel_shape", expand=False, text="Heel Shape")
+
+            row = layout.row()
+            row.enabled = bool(not self.target_ball)
+            layout.prop(context.window_manager.bone_shapes_library, "foot_ball_shape", expand=False, text="Ball Shape")
+
+            row = layout.row()
+            row.enabled = bool(not self.target_roll)
+            layout.prop(context.window_manager.bone_shapes_library, "foot_roll_shape", expand=False, text="Roll Shape")
+        else:
+            layout.label(text="Select an Armature", icon="ERROR")
+
+    #def execute(self, context):
+
+
+#__RENAME TOOL__
 class WRYC_OT_SelectMappingActions(bpy.types.Operator):
     bl_idname = "wryc.ot_select_mapping_actions"
     bl_label = "Select Mapping Actions"
@@ -372,16 +853,20 @@ class WRYC_OT_ApplyMappingToActions(bpy.types.Operator):
 
             for fcurve, old_bone in fcurve_to_modify:
                 new_bone = bone_mappings_dict[old_bone]
-                new_path = fcurve.data_path.replace(f'["{old_bone}"]', f'["{new_bone}"]')
-                fcurve.data_path = new_path
 
-                group = action.groups.get(new_bone)
-                if not group:
-                    group = action.groups.new(name=new_bone)
-                fcurve.group = group
+                if new_bone == "" or new_bone is None :
+                    action.fcurves.remove(fcurve)
+                else:
+                    new_path = fcurve.data_path.replace(f'["{old_bone}"]', f'["{new_bone}"]')
+                    fcurve.data_path = new_path
 
-                rename_count += 1
-                print(f'renamed {old_bone} to {new_bone}')
+                    group = action.groups.get(new_bone)
+                    if not group:
+                        group = action.groups.new(name=new_bone)
+                    fcurve.group = group
+
+                    rename_count += 1
+                    print(f'renamed {old_bone} to {new_bone}')
 
         self.report({'INFO'}, f"Handled {len(selected_actions)} Actions" )
         return {'FINISHED'}
@@ -458,17 +943,30 @@ class WRYC_OT_BoneMappingExport(bpy.types.Operator):
     bl_label = "Export"
     bl_options = {'REGISTER', 'UNDO'}
 
-    filepath: bpy.props.StringProperty(subtype='FILE_PATH')
+    filepath: bpy.props.StringProperty(
+        subtype='FILE_PATH',
+        default="bone_mapping.json",
+    )
+    filename_ext = ".json"
 
     def execute(self, context):
         props = context.scene.bone_mapping_settings
         data = [{"source": m.source, "target":m.target} for m in props.mappings]
+
+        if not self.filepath.lower().endswith(".json"):
+            self.filepath += ".json"
+
         with open(self.filepath, "w", encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+        props.set_last_path(self.filepath)
+
         self.report({'INFO'}, "Bone Mapping Exported")
         return {'FINISHED'}
 
     def invoke(self, context, event):
+        props = context.scene.bone_mapping_settings
+        self.filepath = props.get_last_path()
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
 
@@ -479,17 +977,30 @@ class WRYC_OT_BoneMappingImport(bpy.types.Operator):
     filepath: bpy.props.StringProperty(subtype='FILE_PATH')
 
     def execute(self, context):
+        if not self.filepath.lower().endswith(".json"):
+            self.report({'ERROR'}, "Only .json file can be supported")
+            return {'CANCELLED'}
+
         props = context.scene.bone_mapping_settings
+
         with open(self.filepath, "r", encoding='utf-8') as f:
             data = json.load(f)
+
         props.mappings.clear()
         for item in data:
             map_item = props.mappings.add()
-            map_item.source = item["source", ""]
-            map_item.target = item["target", ""]
+            map_item.source = item.get("source", "")
+            map_item.target = item.get("target", "")
+
         props.active_index = 0
         self.report({'INFO'}, "Bone Mapping Imported")
         return {'FINISHED'}
+
+    def invoke(self, context, event):
+        props = context.scene.bone_mapping_settings
+        self.filepath = props.get_last_path()
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
 
 class WRYC_OT_RenameTool(bpy.types.Operator):
     bl_idname = "wryc.ot_rename_tool"
@@ -552,3 +1063,203 @@ class WRYC_OT_RenameTool(bpy.types.Operator):
         if arm:
             return [(b.name, b.name, "") for b in arm.bones]
         return []
+
+#__EXPORT TOOL__
+class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
+    bl_idname = "wryc.ot_export_to_unreal"
+    bl_label = "BL Export to Unreal"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        layout = self.layout
+
+        settings = context.scene.export_to_unreal
+
+        box_mesh = layout.box()
+        box_mesh.label(text="Mesh/Armature")
+        box_mesh.prop(settings, "mesh_path", text="Mesh Path:")
+        row = box_mesh.row(align=True)
+        '''row.prop(settings, "is_export_mesh", text="Export Mesh")'''
+        row.prop(settings, "apply_modifiers", text="Apply Modifiers")
+        box_mesh.prop(settings, "skeletal_prefix", text="Skeletal Prefix:")
+        '''box_mesh.prop(settings, "static_prefix", text="Static Prefix:")'''
+
+        box_action = layout.box()
+        box_action.label(text="Action")
+        box_action.prop(settings, "action_path", text="Action Path")
+        box_action.prop(settings, "export_type", text="Export Type")
+        row = box_action.row(align=True)
+        row.prop(settings, "is_add_start_end", text="Add Start/End Keyframes")
+        box_action.prop(settings, "action_prefix", text="Action Prefix:")
+
+        box_advanced = layout.box()
+        box_advanced.label(text="Advanced Settings")
+        row = box_advanced.row()
+        row.prop(settings, "only_deform", text="Only Deform Bones")
+        row.prop(settings, "add_leaf", text="Add Leaf Bones")
+
+        row = box_advanced.row()
+        col = row.column(align=True)
+        split = col.split(factor=0.7, align=True)
+        split.label(text="Primary Bone Axis")
+        split.prop(settings, "primary_bone_axis", text="")
+        split = col.split(factor=0.7, align=True)
+        split.label(text="Secondary Bone Axis")
+        split.prop(settings, "secondary_bone_axis", text="")
+
+        col = row.column(align=True)
+        split = col.split(factor=0.7, align=True)
+        split.label(text="FBX Axis Forward")
+        split.prop(settings, "axis_forward", text="")
+        split = col.split(factor=0.7, align=True)
+        split.label(text="FBX Axis Up")
+        split.prop(settings, "axis_up", text="")
+
+    def execute(self, context):
+        settings = context.scene.export_to_unreal
+
+        armatures = [obj for obj in context.selected_objects if obj.type == 'ARMATURE']
+        if not armatures:
+            self.report({'ERROR'}, "No armature selected")
+            return {'CANCELLED'}
+
+        meshs = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if settings.mesh_path.strip() and settings.is_export_mesh and not meshs:
+            self.report({'ERROR'}, "No mesh selected")
+            return {'CANCELLED'}
+
+        arm = armatures[0]
+        armature_name = arm.name
+
+        selected_objects = context.selected_objects[:]
+        active_obj = context.view_layer.objects.active
+
+        original_name = arm.name
+        original_action = arm.animation_data.action if arm.animation_data else None
+
+        try:
+            bpy.context.view_layer.objects.active = arm
+            arm.name = "Armature"
+            if arm.data.users > 1:
+                arm.data = arm.data.copy()
+
+            bpy.ops.object.mode_set(mode='EDIT')
+            edit_bones = arm.data.edit_bones
+
+            if "root" not in edit_bones:
+                root = edit_bones.new("root")
+                root.head = (0, 0, 0)
+                root.tail = (0, 0.1, 0)
+                for b in edit_bones:
+                    if b.name != "root" and b.parent is None:
+                        b.parent = root
+            else:
+                root = edit_bones["root"]
+                root.head = (0, 0, 0)
+            bpy.ops.object.mode_set(mode='OBJECT')
+            arm.scale *= 100.0
+
+            bpy.ops.object.select_all(action='DESELECT')
+            arm.select_set(True)
+            for mesh in meshs:
+                mesh.select_set(True)
+            bpy.context.view_layer.objects.active = arm
+
+            # Mesh/Armature
+            if settings.mesh_path.strip():
+                export_dir = bpy.path.abspath(settings.mesh_path)
+                sk_file_name = settings.skeletal_prefix + armature_name
+                export_file = os.path.join(export_dir, sk_file_name + ".fbx")
+
+                AddonFunctions.do_export(
+                    context, filepath=export_file, object_type={'ARMATURE', 'MESH'},scale=0.01, bake_anim=False
+                )
+                self.report({'INFO'}, f"Mesh/Armature Exported Successfully")
+
+            #Action
+            if settings.action_path.strip():
+                bpy.ops.object.select_all(action='DESELECT')
+                arm.select_set(True)
+                bpy.context.view_layer.objects.active = arm
+
+                '''nla_strips = []
+                if arm.animation_data and arm.animation_data.nla_tracks:
+                    for track in arm.animation_data.nla_tracks:
+                        for strip in track.strips:
+                            nla_strips.append((strip, strip.mute))'''
+
+                if settings.export_type == "SELECTED":
+                    action = arm.animation_data.action if arm.animation_data else None
+                    if not action:
+                        self.report({'ERROR'}, "No active action in selected armature")
+                    else:
+                        '''for strip,_ in nla_strips:
+                            strip.mute = True'''
+
+                        export_name = settings.action_prefix + action.name
+                        act_file = bpy.path.abspath(
+                            settings.action_path + "/" +  export_name + ".fbx"
+                        )
+                        arm.animation_data.action = action
+                        AddonFunctions.do_export(
+                            context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True, bake_all=False
+                        )
+                        '''for strip,mute_state in nla_strips:
+                            strip.mute = mute_state'''
+                        self.report({'INFO'}, f"Exported selected action successfully: {act_file}")
+    
+                elif settings.export_type == "BATCH":
+                    for action in arm.animation_data.actions:
+                        if not action:
+                            continue
+
+                        '''for strip, _ in nla_strips:
+                            strip.mute = True'''
+
+                        export_name = settings.action_prefix + action.name
+                        act_file = bpy.path.abspath(
+                               settings.action_path + "/" + export_name + ".fbx"
+                        )
+                        arm.animation_data.action = action
+                        AddonFunctions.do_export(
+                            context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01,bake_anim=True,bake_all=False
+                        )
+
+                    '''for strip,mute_state in nla_strips:
+                        strip.mute = mute_state'''
+                    self.report({'INFO'}, f"Exported action by batch successfully")
+    
+                elif settings.export_type == "ALL":
+                    blend_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
+                    export_file = os.path.join(bpy.path.abspath(settings.action_path), blend_name + ".fbx")
+                    if bpy.data.actions:
+                        arm.animation_data.action = bpy.data.actions[0]
+
+                    AddonFunctions.do_export(
+                        context, filepath=export_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True,bake_all=True
+                    )
+                    self.report({'INFO'}, f"Exported all action successfully")
+    
+                else:
+                    self.report({'INFO'}, "Action path is empty, skip action export")
+
+        finally:
+            bpy.context.view_layer.objects.active = arm
+            if arm.data.users > 1:
+                arm.data = arm.data.copy()
+            arm.name = original_name
+            arm.scale *= 0.01
+
+            if original_action:
+                arm.animation_data.action = original_action
+
+            bpy.ops.object.select_all(action='DESELECT')
+            for obj in selected_objects:
+                obj.select_set(True)
+            if active_obj:
+                context.view_layer.objects.active = active_obj
+
+        return {'FINISHED'}

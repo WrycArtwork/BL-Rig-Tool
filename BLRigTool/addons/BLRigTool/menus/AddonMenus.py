@@ -13,3 +13,4 @@ class WRYC_MT_GenerateIconMenu(Menu):
         layout.operator("wryc.ot_generate_shape_icon", icon="ADD", text="Generate Icon for selected object")
         layout.operator("wryc.ot_remove_bone_shape_icon", icon="REMOVE", text="Remove Icon")
         layout.operator("wryc.ot_reload_bone_icons", icon="FILE_REFRESH", text="Reload Bone Shape Icons")
+

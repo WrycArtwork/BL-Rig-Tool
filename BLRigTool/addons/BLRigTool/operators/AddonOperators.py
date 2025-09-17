@@ -1160,12 +1160,23 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
                 root = edit_bones["root"]
                 root.head = (0, 0, 0)
             bpy.ops.object.mode_set(mode='OBJECT')
+
             arm.scale *= 100.0
+            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+            for action in bpy.data.actions:
+                for fcurve in action.fcurves:
+                    if fcurve.data_path.endswith('location'):
+                        for kp in fcurve.keyframe_points:
+                            kp.co.y *= 100
+                            kp.handle_left.y *= 100
+                            kp.handle_right.y *= 100
 
             bpy.ops.object.select_all(action='DESELECT')
             arm.select_set(True)
             for mesh in meshs:
                 mesh.select_set(True)
+
             bpy.context.view_layer.objects.active = arm
 
             # Mesh/Armature
@@ -1237,7 +1248,17 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
             if arm.data.users > 1:
                 arm.data = arm.data.copy()
             arm.name = original_name
+
             arm.scale *= 0.01
+            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+            for action in bpy.data.actions:
+                for fcurve in action.fcurves:
+                    if fcurve.data_path.endswith('location'):
+                        for kp in fcurve.keyframe_points:
+                            kp.co.y /= 100
+                            kp.handle_left.y /= 100
+                            kp.handle_right.y /= 100
 
             if original_action:
                 arm.animation_data.action = original_action

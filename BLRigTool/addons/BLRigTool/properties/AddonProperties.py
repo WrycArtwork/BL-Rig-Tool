@@ -1,4 +1,5 @@
 import bpy
+import os
 from bpy.props import EnumProperty, BoolProperty, FloatProperty, StringProperty, PointerProperty, CollectionProperty, IntProperty
 from bpy.types import PropertyGroup
 from ..functions import AddonFunctions

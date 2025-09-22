@@ -86,41 +86,41 @@ class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        props = context.scene.bone_mapping_settings
+        settings = context.scene.bone_mapping_settings
 
         row = layout.row()
-        row.prop(props, "show_mappings_settings", text="", icon='TRIA_DOWN' if props.show_mappings_settings else 'TRIA_RIGHT', emboss=False)
+        row.prop(settings, "show_mappings_settings", text="", icon='TRIA_DOWN' if settings.show_mappings_settings else 'TRIA_RIGHT', emboss=False)
         row.label(text="RetargetAction")
 
-        if props.show_mappings_settings:
+        if settings.show_mappings_settings:
             layout.operator("wryc.ot_select_mapping_actions")
             layout.label(text="Bone Mapping List")
-            layout.prop(props, "source_type", text="Source Type")
-            if props.source_type == 'ARMATURE':
-                layout.prop(props, "source_armature", text="Armature")
+            layout.prop(settings, "source_type", text="Source Type")
+            if settings.source_type == 'ARMATURE':
+                layout.prop(settings, "source_armature", text="Armature")
             else:
-                layout.prop(props, "source_action", text="Action")
+                layout.prop(settings, "source_action", text="Action")
 
-            layout.prop(props, "target_armature", text="Target")
+            layout.prop(settings, "target_armature", text="Target")
 
             row = layout.row()
-            row.enabled = props.target_armature is not None and (
-                (props.source_type == 'ARMATURE' and props.source_armature is not None) or
-                (props.source_type == 'ACTION' and props.source_action is not None)
+            row.enabled = settings.target_armature is not None and (
+                (settings.source_type == 'ARMATURE' and settings.source_armature is not None) or
+                (settings.source_type == 'ACTION' and settings.source_action is not None)
             )
             row.operator("wryc.ot_bone_mapping_generate")
 
 
             layout.label(text="Bone Mapping List")
-            layout.template_list("UI_UL_list", "bone_mapping_list", props, "mappings", props, "active_index")
-            layout.operator("wryc.ot_bone_mapping_lock", icon='LOCKED' if props.lock_mappings else 'UNLOCKED')
+            layout.template_list("UI_UL_list", "bone_mapping_list", settings, "mappings", settings, "active_index")
+            layout.operator("wryc.ot_bone_mapping_lock", icon='LOCKED' if settings.lock_mappings else 'UNLOCKED')
 
             row = layout.row()
-            row.enabled =  len(props.mappings) > 0 and props.lock_mappings == False
-            row.prop(props, "target_import")
+            row.enabled =  len(settings.mappings) > 0 and settings.lock_mappings == False
+            row.prop(settings, "target_import")
 
             row = layout.row()
-            row.enabled = len(props.mappings) > 0
+            row.enabled = len(settings.mappings) > 0
             row.operator("wryc.ot_bone_mapping_import", icon='IMPORT')
             row.operator("wryc.ot_bone_mapping_export", icon='EXPORT')
 
@@ -128,21 +128,21 @@ class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
 
 
         layout = self.layout
-        props = context.scene.rename_tool
+        settings = context.scene.rename_tool
         layout.label(text="Replace Name")
 
-        layout.prop(props, "rename_target")
-        layout.prop(props, "rename_mode")
+        layout.prop(settings, "rename_target")
+        layout.prop(settings, "rename_mode")
 
-        if props.rename_mode == 'FIND_REPLACE':
-            layout.prop(props, "find_str")
-            layout.prop(props, "replace_str")
-        elif props.rename_mode == 'SET_PREFIX_SUFFIX':
-            layout.prop(props, "prefix_str")
-            layout.prop(props, "suffix_str")
-        elif props.rename_mode == 'REMOVE_PREFIX_SUFFIX':
-            layout.prop(props, "prefix_str")
-            layout.prop(props, "suffix_str")
+        if settings.rename_mode == 'FIND_REPLACE':
+            layout.prop(settings, "find_str")
+            layout.prop(settings, "replace_str")
+        elif settings.rename_mode == 'SET_PREFIX_SUFFIX':
+            layout.prop(settings, "prefix_str")
+            layout.prop(settings, "suffix_str")
+        elif settings.rename_mode == 'REMOVE_PREFIX_SUFFIX':
+            layout.prop(settings, "prefix_str")
+            layout.prop(settings, "suffix_str")
 
         layout.operator("wryc.ot_rename_tool")
 

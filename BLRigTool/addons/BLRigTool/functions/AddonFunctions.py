@@ -4,10 +4,14 @@ from audioop import cross
 
 import bpy
 import os
-
 import mathutils
 
-def get_selected_bones(context, self = None):
+from ..config import __addon_name__
+
+def get_preferences():
+    return bpy.context.preferences.addons[__addon_name__].preferences
+
+def get_selected_bones(context, self):
     pbone = context.selected_pose_bones
 
     if not pbone:
@@ -32,10 +36,12 @@ def check_pose_mode(context, self):
 #__CUSTOM DISPLAY SHAPE__
 preview_collections = {}
 def get_icon_folder():
-    return os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets", "icons"))
+    path = get_preferences().bone_shape_folder
+    return os.path.normpath(os.path.join(path, "icons"))
 
 def get_library_path():
-    return os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets", "BoneShapesLibrary.blend"))
+    path = get_preferences().bone_shape_folder
+    return os.path.normpath(os.path.join(path, "BoneShapesLibrary.blend"))
 
 def load_icon_preview():
     pcoll = bpy.utils.previews.new()

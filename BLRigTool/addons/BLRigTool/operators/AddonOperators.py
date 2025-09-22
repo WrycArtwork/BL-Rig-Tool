@@ -11,8 +11,8 @@ from bpy_extras.io_utils import ExportHelper
 
 from ..config import __addon_name__
 from ..functions import AddonFunctions
-from ..functions.AddonFunctions import get_library_path
 from ..properties import AddonProperties
+from ..preference import AddonPreferences
 
 #__CUSTOM DISPLAY SHAPE__
 class WRYC_OT_GenerateShapeIcon(bpy.types.Operator):
@@ -307,6 +307,7 @@ class WRYC_OT_CreateFingerController(bpy.types.Operator):
             layout.label(text="Select an Armature", icon="ERROR")
 
     def execute(self, context):
+        pref = AddonFunctions.get_preferences()
         obj = context.object
 
         if not self.root_bone:
@@ -315,7 +316,7 @@ class WRYC_OT_CreateFingerController(bpy.types.Operator):
 
         root_name = self.root_bone
 
-        raw_target_name = self.target_bone.strip() if self.target_bone else f"TB_{root_name}"
+        raw_target_name = self.target_bone.strip() if self.target_bone else f"{pref.target_prefix} + {root_name}"
         target_name = AddonFunctions.ensure_target(
             obj,
             root_name,
@@ -402,6 +403,7 @@ class WRYC_OT_CreateArmController(bpy.types.Operator):
 
     def execute(self, context):
         obj = context.object
+        pref = AddonFunctions.get_preferences()
 
         if not self.hand:
             self.report({'ERROR'}, f"Please select the hand bone")
@@ -430,7 +432,7 @@ class WRYC_OT_CreateArmController(bpy.types.Operator):
         lower_name = lower_pb.name
         upper_name = upper_pb.name
 
-        raw_target_wrist = self.target_wrist.strip() if self.target_wrist else f"TB_{hand_name}"
+        raw_target_wrist = self.target_wrist.strip() if self.target_wrist else f"{pref.target_prefix} +{hand_name}"
         target_wrist = AddonFunctions.ensure_target(
             obj,
             hand_name,
@@ -451,7 +453,7 @@ class WRYC_OT_CreateArmController(bpy.types.Operator):
             target_elbow = AddonFunctions.ensure_target(
                 obj,
                 upper_name,
-                f"TB_{upper_name}",
+                f"{pref.target_prefix} + {upper_name}",
                 context.window_manager.bone_shapes_library.arm_elbow_shape,
                 parent_name="",
                 position=pole_pos,
@@ -570,6 +572,7 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
 
     def execute(self, context):
         obj = context.object
+        pref = AddonFunctions.get_preferences()
 
         if not self.foot:
             self.report({'ERROR'}, f"Please select the foot bone")
@@ -598,7 +601,7 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
         calf_name = calf_pb.name
         thigh_name = thigh_pb.name
 
-        raw_offset_ankle = self.offset_ankle.strip() if self.offset_ankle else f"OB_{foot_name}"
+        raw_offset_ankle = self.offset_ankle.strip() if self.offset_ankle else f"{pref.offset_prefix} + {foot_name}"
         offset_ankle = AddonFunctions.ensure_foot_ob_bone(
             obj,
             calf_name,
@@ -607,7 +610,7 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
         )
         offset_name = offset_ankle.name
 
-        raw_target_ankle = self.target_ankle.strip() if self.target_ankle else f"GB_{foot_name}"
+        raw_target_ankle = self.target_ankle.strip() if self.target_ankle else f"{pref.gizmo_prefix} + {foot_name}"
         target_ankle = AddonFunctions.ensure_target(
             obj,
             offset_ankle,
@@ -629,7 +632,7 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
             target_knee = AddonFunctions.ensure_target(
                 obj,
                 thigh_name,
-                f"TB_{thigh_name}",
+                f"{pref.target_prefix} + {thigh_name}",
                 parent_name="",
                 position=pole_pos,
             )
@@ -689,7 +692,7 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
         self.report({'INFO'}, f"Generated Controller for LEG")
         return {'FINISHED'}
 
-class WRYC_OT_CreateFootController(bpy.types.Operator):
+'''class WRYC_OT_CreateFootController(bpy.types.Operator):
     bl_idname = "wryc.ot_create_foot_controller"
     bl_label = "Foot"
     bl_description = "Create foot controller"
@@ -745,7 +748,7 @@ class WRYC_OT_CreateFootController(bpy.types.Operator):
         else:
             layout.label(text="Select an Armature", icon="ERROR")
 
-    #def execute(self, context):
+    def execute(self, context):'''
 
 
 #__RENAME TOOL__

@@ -97,7 +97,7 @@ class WRYC_OT_CustomBoneShape(bpy.types.Operator):
             self.report({'INFO'}, "No bone shape selected")
             return {'CANCELLED'}
 
-        blend_path = get_library_path()
+        blend_path = AddonFunctions.get_library_path()
         with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
             if shape_name in data_from.objects:
                 data_to.objects = [shape_name]
@@ -749,7 +749,6 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
             layout.label(text="Select an Armature", icon="ERROR")
 
     def execute(self, context):'''
-
 
 #__RENAME TOOL__
 class WRYC_OT_SelectMappingActions(bpy.types.Operator):

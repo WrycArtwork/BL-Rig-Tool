@@ -1,7 +1,6 @@
 import bpy
 from ....common.types.framework import reg_order
 
-
 class BasePanel(object):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -10,7 +9,6 @@ class BasePanel(object):
     @classmethod
     def poll(cls, context: bpy.types.Context):
         return True
-
 
 @reg_order(0)
 class WRYC_PT_CustomDisplayBone(BasePanel, bpy.types.Panel):

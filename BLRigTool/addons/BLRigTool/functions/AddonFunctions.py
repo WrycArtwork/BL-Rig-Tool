@@ -1,6 +1,5 @@
 import difflib
 import math
-from audioop import cross
 
 import bpy
 import os
@@ -354,7 +353,6 @@ def ensure_foot_ob_bone(obj, source_name, target_name, shape_name="None", ):
 
     return pb_new
 
-
 def compute_pole_position(obj, upper_name, lower_name, end_name, direction="X+", distance=0.5):
     pb_upper = obj.pose.bones[upper_name]
     pb_lower = obj.pose.bones[lower_name]
@@ -408,7 +406,6 @@ def compute_pole_angle(obj, upper_name, end_name, pole_pos_world):
 
     return angle
 
-
 def collect_bone_chain(root_pbone):
     chain = []
     def recure(pb):
@@ -417,8 +414,6 @@ def collect_bone_chain(root_pbone):
             recure(child)
     recure(root_pbone)
     return chain
-
-
 
 #__RENAME TOOL__
 def update_selected_target(self, context):
@@ -476,4 +471,7 @@ def do_export(context, filepath, object_type={'ARMATURE'}, scale=1.0, bake_anim=
         bake_anim_use_all_actions=bake_all,
         bake_anim_force_startend_keying=True,
         bake_anim_use_nla_strips=False,
+        mesh_smooth_type='EDGE',
+        use_triangles=True,
+        use_tspace=True,
     )

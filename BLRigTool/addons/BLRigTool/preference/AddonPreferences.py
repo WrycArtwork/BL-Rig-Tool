@@ -4,10 +4,7 @@ import bpy
 from bpy.props import StringProperty, IntProperty, BoolProperty
 from bpy.types import AddonPreferences
 
-from ..properties import AddonProperties
-
 from ..config import __addon_name__
-
 
 class WRYCAddonPreferences(AddonPreferences):
     # this must match the add-on name (the folder name of the unzipped file)
@@ -39,7 +36,6 @@ class WRYCAddonPreferences(AddonPreferences):
         name="Offset Prefix",
         default="OB_",
     )
-
 
     #__UI__
     def draw(self, context: bpy.types.Context):

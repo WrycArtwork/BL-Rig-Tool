@@ -32,6 +32,17 @@ def check_pose_mode(context, self):
 
     return True
 
+def sort_actions(collection):
+    #class is AddonProperties.ActionEntry
+    data = [{"name": item.name, "enabled": getattr(item, "enabled", False)} for item in collection]
+    sorted_data = sorted(data, key=lambda x: x["name"].lower())
+
+    collection.clear()
+    for entry in sorted_data:
+        item = collection.add()
+        item.name = entry["name"]
+        item.enabled = entry["enabled"]
+
 #__CUSTOM DISPLAY SHAPE__
 preview_collections = {}
 def get_icon_folder():
@@ -449,8 +460,25 @@ def target_bone_items(self, context, edit_text):
     return [m for m in matches]
 
 #__EXPORT TOOL__
-def do_export(context, filepath, object_type={'ARMATURE'}, scale=1.0, bake_anim=False, bake_all=False):
+def set_timeline(context, action):
+    scene = context.scene
+
+    if action:
+        start, end = map(int, action.frame_range)
+        scene.frame_start = start
+        scene.frame_end = end
+    else:
+        print("No valid action provided.")
+
+def do_export(context, filepath, object_type={'ARMATURE'}, scale=1.0, bake_anim=False, bake_all=False, action=None):
     settings = context.scene.export_to_unreal
+
+    if bake_all == False:
+        scene = context.scene
+        if action:
+            start, end = map(int, action.frame_range)
+            scene.frame_start = start
+            scene.frame_end = end
 
     bpy.ops.export_scene.fbx(
         object_types=object_type,
@@ -469,8 +497,8 @@ def do_export(context, filepath, object_type={'ARMATURE'}, scale=1.0, bake_anim=
         axis_up=settings.axis_up,
         bake_anim=bake_anim,
         bake_anim_use_all_actions=bake_all,
-        bake_anim_force_startend_keying=True,
-        bake_anim_use_nla_strips=False,
+        bake_anim_force_startend_keying=settings.is_add_start_end,
+        bake_anim_use_nla_strips=settings.bake_nla_strips,
         mesh_smooth_type='EDGE',
         use_triangles=True,
         use_tspace=True,

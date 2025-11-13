@@ -78,9 +78,9 @@ class WRYC_PT_GenerateConstraint(BasePanel, bpy.types.Panel):
         return True
 
 @reg_order(2)
-class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
-    bl_label = "Rename Tool"
-    bl_idname = "WRYC_PT_rename_tool"
+class WRYC_PT_RetargetActions(BasePanel, bpy.types.Panel):
+    bl_label = "RetargetActions"
+    bl_idname = "WRYC_PT_retarget_actions"
 
     def draw(self, context):
         layout = self.layout
@@ -88,11 +88,10 @@ class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
 
         row = layout.row()
         row.prop(settings, "show_mappings_settings", text="", icon='TRIA_DOWN' if settings.show_mappings_settings else 'TRIA_RIGHT', emboss=False)
-        row.label(text="RetargetAction")
+        row.label(text="Mapping Settings")
 
         if settings.show_mappings_settings:
-            layout.operator("wryc.ot_select_mapping_actions")
-            layout.label(text="Bone Mapping List")
+            layout.label(text="Mapping Source/Target Settings")
             layout.prop(settings, "source_type", text="Source Type")
             if settings.source_type == 'ARMATURE':
                 layout.prop(settings, "source_armature", text="Armature")
@@ -108,6 +107,7 @@ class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
             )
             row.operator("wryc.ot_bone_mapping_generate")
 
+            layout.separator()
 
             layout.label(text="Bone Mapping List")
             layout.template_list("UI_UL_list", "bone_mapping_list", settings, "mappings", settings, "active_index")
@@ -122,9 +122,17 @@ class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
             row.operator("wryc.ot_bone_mapping_import", icon='IMPORT')
             row.operator("wryc.ot_bone_mapping_export", icon='EXPORT')
 
-            layout.operator("wryc.ot_apply_mapping_to_actions")
+        layout.separator()
 
+        layout.operator("wryc.ot_select_mapping_actions")
+        layout.operator("wryc.ot_apply_mapping_to_actions")
 
+@reg_order(3)
+class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
+    bl_label = "Rename Tool"
+    bl_idname = "WRYC_PT_rename_tool"
+
+    def draw(self, context):
         layout = self.layout
         settings = context.scene.rename_tool
         layout.label(text="Replace Name")

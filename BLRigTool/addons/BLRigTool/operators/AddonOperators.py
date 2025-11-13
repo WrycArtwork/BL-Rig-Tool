@@ -1,6 +1,7 @@
 import difflib
 import json
 import os
+from _ast import operator
 from itertools import chain
 from re import search, split
 
@@ -220,7 +221,7 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
             self.report({'INFO'}, "No bone shape selected")
             return {'CANCELLED'}
 
-        blend_path = get_library_path()
+        blend_path = AddonFunctions.get_library_path()
         with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
             if shape_name in data_from.objects:
                 data_to.objects = [shape_name]
@@ -750,7 +751,7 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
 
     def execute(self, context):'''
 
-#__RENAME TOOL__
+#__RETARGET ACTIONS__
 class WRYC_OT_SelectMappingActions(bpy.types.Operator):
     bl_idname = "wryc.ot_select_mapping_actions"
     bl_label = "Select Mapping Actions"
@@ -763,9 +764,6 @@ class WRYC_OT_SelectMappingActions(bpy.types.Operator):
 
         if bpy.data.actions:
             for action in bpy.data.actions:
-                if not action.users and not action.use_fake_user:
-                    continue
-
                 if action.name not in exiting_names:
                     item = settings.mapping_actions.add()
                     item.name = action.name
@@ -775,6 +773,8 @@ class WRYC_OT_SelectMappingActions(bpy.types.Operator):
         to_remove = [i for i, a in enumerate(settings.mapping_actions) if a.name not in valid_names]
         for i in reversed(to_remove):
             settings.mapping_actions.remove(i)
+
+        AddonFunctions.sort_actions(settings.mapping_actions)
         return context.window_manager.invoke_props_dialog(self)
 
     def draw(self, context):
@@ -786,8 +786,8 @@ class WRYC_OT_SelectMappingActions(bpy.types.Operator):
             return
 
         row = layout.row(align=True)
-        row.operator("wryc.ot_enable_all_actions", text="Enable All")
-        row.operator("wryc.ot_disable_all_actions", text="Disable All")
+        row.operator("wryc.ot_enable_all_mapping_actions", text="Enable All")
+        row.operator("wryc.ot_disable_all_mapping_actions", text="Disable All")
 
         box = layout.box()
         for entry in actions:
@@ -801,8 +801,8 @@ class WRYC_OT_SelectMappingActions(bpy.types.Operator):
             return {'CANCELLED'}
         return {'FINISHED'}
 
-class WRYC_OT_EnableAllActions(bpy.types.Operator):
-    bl_idname = "wryc.ot_enable_all_actions"
+class WRYC_OT_EnableAllMappingActions(bpy.types.Operator):
+    bl_idname = "wryc.ot_enable_all_mapping_actions"
     bl_label = "Enable All Actions"
     bl_options = {'INTERNAL'}
 
@@ -811,8 +811,8 @@ class WRYC_OT_EnableAllActions(bpy.types.Operator):
             entry.enabled = True
         return {'FINISHED'}
 
-class WRYC_OT_DisableAllActions(bpy.types.Operator):
-    bl_idname = "wryc.ot_disable_all_actions"
+class WRYC_OT_DisableAllMappingActions(bpy.types.Operator):
+    bl_idname = "wryc.ot_disable_all_mapping_actions"
     bl_label = "Disable All Actions"
     bl_options = {'INTERNAL'}
 
@@ -1004,6 +1004,7 @@ class WRYC_OT_BoneMappingImport(bpy.types.Operator):
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
 
+#__RENAME TOOL__
 class WRYC_OT_RenameTool(bpy.types.Operator):
     bl_idname = "wryc.ot_rename_tool"
     bl_label = "Apply "
@@ -1067,6 +1068,80 @@ class WRYC_OT_RenameTool(bpy.types.Operator):
         return []
 
 #__EXPORT TOOL__
+class WRYC_OT_SelectExportActions(bpy.types.Operator):
+    bl_idname = "wryc.ot_select_export_actions"
+    bl_label = "Select Export Actions"
+    bl_description = "Only actions that use or set fake_user can be selected."
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def invoke(self, context, event):
+        settings = context.scene.export_to_unreal
+        exiting_names = {a.name for a in settings.export_actions}
+        old_states = {item.name: item.enabled for item in settings.export_actions}
+
+        if bpy.data.actions:
+            for action in bpy.data.actions:
+                if not action.users and not action.use_fake_user:
+                    continue
+
+                if action.name not in exiting_names:
+                    item = settings.export_actions.add()
+                    item.name = action.name
+                    item.enabled = old_states.get(action.name, False)
+
+        valid_names = {a.name for a in bpy.data.actions}
+        to_remove = [i for i, a in enumerate(settings.export_actions) if a.name not in valid_names]
+        for i in reversed(to_remove):
+            settings.export_actions.remove(i)
+
+        AddonFunctions.sort_actions(settings.export_actions)
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        actions = context.scene.export_to_unreal.export_actions
+
+        if not bpy.data.actions:
+            layout.label(text="No actions selected")
+            return
+
+        row = layout.row(align=True)
+        row.operator("wryc.ot_enable_all_export_actions", text="Enable All")
+        row.operator("wryc.ot_disable_all_export_actions", text="Disable All")
+
+        box = layout.box()
+        for entry in actions:
+            box.prop(entry, "enabled", text=entry.name)
+
+    def execute(self, context):
+        settings = context.scene.export_to_unreal
+        selected_actions = [a.name for a in settings.export_actions if a.enabled]
+        if not selected_actions:
+            self.report({'ERROR'}, "No action can export (Only using or fake_user actions can be selected).")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class WRYC_OT_EnableAllExportActions(bpy.types.Operator):
+    bl_idname = "wryc.ot_enable_all_export_actions"
+    bl_label = "Enable All Actions"
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        for entry in context.scene.export_to_unreal.export_actions:
+            entry.enabled = True
+        return {'FINISHED'}
+
+class WRYC_OT_DisableAllExportActions(bpy.types.Operator):
+    bl_idname = "wryc.ot_disable_all_export_actions"
+    bl_label = "Disable All Actions"
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        for entry in context.scene.export_to_unreal.export_actions:
+            entry.enabled = False
+        return {'FINISHED'}
+
 class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
     bl_idname = "wryc.ot_export_to_unreal"
     bl_label = "BL Export to Unreal"
@@ -1084,17 +1159,19 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
         box_mesh.label(text="Mesh/Armature")
         box_mesh.prop(settings, "mesh_path", text="Mesh Path:")
         row = box_mesh.row(align=True)
-        '''row.prop(settings, "is_export_mesh", text="Export Mesh")'''
         row.prop(settings, "apply_modifiers", text="Apply Modifiers")
         box_mesh.prop(settings, "skeletal_prefix", text="Skeletal Prefix:")
-        '''box_mesh.prop(settings, "static_prefix", text="Static Prefix:")'''
 
         box_action = layout.box()
         box_action.label(text="Action")
         box_action.prop(settings, "action_path", text="Action Path")
         box_action.prop(settings, "export_type", text="Export Type")
+        if settings.export_type == "BATCH":
+            box_action.operator("wryc.ot_select_export_actions", text="Export Actions")
+
         row = box_action.row(align=True)
         row.prop(settings, "is_add_start_end", text="Add Start/End Keyframes")
+        row.prop(settings, "bake_nla_strips", text="Bake NLA Strips")
         box_action.prop(settings, "action_prefix", text="Action Prefix:")
 
         box_advanced = layout.box()
@@ -1129,7 +1206,7 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
             return {'CANCELLED'}
 
         meshs = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        if settings.mesh_path.strip() and settings.is_export_mesh and not meshs:
+        if settings.mesh_path.strip() and not meshs:
             self.report({'ERROR'}, "No mesh selected")
             return {'CANCELLED'}
 
@@ -1203,20 +1280,33 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
                     if not action:
                         self.report({'ERROR'}, "No active action in selected armature")
                     else:
-
                         export_name = settings.action_prefix + action.name
                         act_file = bpy.path.abspath(
                             settings.action_path + "/" +  export_name + ".fbx"
                         )
                         arm.animation_data.action = action
+
+                        #Temporarily modify scene timeline by action
+                        orig_range = context.scene.frame_start, context.scene.frame_end
+
                         AddonFunctions.do_export(
-                            context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True, bake_all=False
+                            context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True, bake_all=False, action=action
                         )
+
+                        #Restore timeline to origin
+                        context.scene.frame_start, context.scene.frame_end = orig_range
 
                         self.report({'INFO'}, f"Exported selected action successfully: {act_file}")
     
                 elif settings.export_type == "BATCH":
-                    for action in bpy.data.actions:
+
+                    # Temporarily modify scene timeline by action
+                    orig_range = context.scene.frame_start, context.scene.frame_end
+
+                    enabled_entries = [a for a in settings.export_actions if a.enabled]
+
+                    for entry in enabled_entries:
+                        action = bpy.data.actions.get(entry.name)
                         if not action:
                             continue
 
@@ -1226,8 +1316,11 @@ class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
                         )
                         arm.animation_data.action = action
                         AddonFunctions.do_export(
-                            context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01,bake_anim=True,bake_all=False
+                            context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True, bake_all=False, action=action
                         )
+
+                    # Restore timeline to origin
+                    context.scene.frame_start, context.scene.frame_end = orig_range
 
                     self.report({'INFO'}, f"Exported action by batch successfully")
     

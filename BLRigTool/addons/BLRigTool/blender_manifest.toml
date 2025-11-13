@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "BLRigTool"
-version = "0.1.0"
+version = "0.0.4"
 name = "BL Rig Tool"
 tagline = "Rig tool for Blender. include Custom Display Shape, Generate Constraint(Exp), Rename Tool, Export to Unreal"
 maintainer = "WRYC <wryc.artwork@gmail.com>"

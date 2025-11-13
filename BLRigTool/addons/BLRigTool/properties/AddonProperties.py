@@ -4,6 +4,10 @@ from bpy.props import EnumProperty, BoolProperty, FloatProperty, StringProperty,
 from bpy.types import PropertyGroup
 from ..functions import AddonFunctions
 
+class ActionEntry(PropertyGroup):
+    name: StringProperty()
+    enabled: BoolProperty(default=False)
+
 #__CUSTOM DISPLAY SHAPE__
 class BoneShapesLibrary(PropertyGroup):
 
@@ -87,14 +91,10 @@ class BoneDisplaySettings(PropertyGroup):
 
 #__GENERATE CONSTRAINTS__
 
-#__RENAME TOOL__
+#__RETARGET ACTIONS__
 class BoneMapItems(PropertyGroup):
     source: StringProperty(name="Source Bone")
     target: StringProperty(name="Target Bone")
-
-class ActionEntry(PropertyGroup):
-    name: StringProperty()
-    enabled: BoolProperty(default=False)
 
 class BoneMappingSettings(PropertyGroup):
     show_mappings_settings: BoolProperty(default=True)
@@ -142,7 +142,7 @@ class BoneMappingSettings(PropertyGroup):
 
     def set_last_path(self, path):
         self.last_path = path
-
+#__RENAME TOOL__
 class RenameTool(PropertyGroup):
 
     rename_target: EnumProperty(
@@ -177,11 +177,6 @@ class ExportToUnreal(PropertyGroup):
         default="//"
     )
 
-    is_export_mesh: BoolProperty(
-        name="Export Mesh",
-        default=True
-    )
-
     apply_modifiers: BoolProperty(
         name="Apply Modifiers",
         default=True
@@ -192,11 +187,9 @@ class ExportToUnreal(PropertyGroup):
         default=""
     )
 
-    '''static_prefix: StringProperty(
-        name="Static Prefix",
-        default=""
-    )'''
     #Action
+    export_actions: CollectionProperty(type=ActionEntry)
+
     action_path: StringProperty(
         name="Action Path",
         subtype='DIR_PATH',
@@ -215,6 +208,11 @@ class ExportToUnreal(PropertyGroup):
 
     is_add_start_end: BoolProperty(
         name="Add Start/End Keyframes",
+        default=False
+    )
+
+    bake_nla_strips: BoolProperty(
+        name="Bake NLA Strips",
         default=False
     )
 

@@ -7,8 +7,10 @@ from re import search, split
 
 import bpy
 import math
+import mathutils
 
 from bpy_extras.io_utils import ExportHelper
+from setuptools.command.rotate import rotate
 
 from ..config import __addon_name__
 from ..functions import AddonFunctions
@@ -249,27 +251,326 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
         return {'FINISHED'}
 
 #__GENERATE CONSTRAINTS__
-class WRYC_OT_RemoveConstrains(bpy.types.Operator):
-    bl_idname = "wryc.ot_remove_constrains"
-    bl_label = "Remove Constraints"
-    bl_description = "Remove constraints"
+class WRYC_OT_ConnectDeformArmature(bpy.types.Operator):
+    bl_idname = "wryc.ot_connect_deform_armature"
+    bl_label = "Connect Deform Armature"
+    bl_description = "Create deform bones from source armature and bind to target armature."
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def invoke(self, context, event):
+        if context.mode != 'OBJECT':
+            self.report({'ERROR'}, "Please into Object mode")
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        settings = context.scene.deform_settings
+
+        layout = self.layout
+        layout.label(text="Connect Deform Armature")
+        layout.prop_search(settings, "src_obj", context.scene, "objects", text="Source Armature")
+        layout.prop_search(settings, "tgt_obj", context.scene, "objects", text="Target Armature")
+
+    def execute(self, context):
+        settings = context.scene.deform_settings
+        pref = AddonFunctions.get_preferences()
+
+        def_obj = settings.src_obj
+        tgt_obj = settings.tgt_obj
+        def_arm = def_obj.data
+        tgt_arm = tgt_obj.data
+
+        if not def_obj or not tgt_obj:
+            self.report({'ERROR'}, "Please select both armatures.")
+            return {'CANCELLED'}
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+        context.view_layer.objects.active = tgt_obj
+        bpy.ops.object.mode_set(mode='EDIT')
+
+        if "Deform Bones" not in tgt_arm.collections:
+            tgt_arm.collections.new("Deform Bones")
+        deform_col = tgt_arm.collections["Deform Bones"]
+
+        def_bones = []
+
+        for src_bone in def_arm.bones:
+            src_name = src_bone.name
+            def_name = f"{pref.deform_prefix}{src_name}"
+
+            if src_name not in tgt_arm.bones:
+                continue
+
+            tgt_bone = tgt_arm.bones[src_name]
+
+            if def_name in tgt_arm.edit_bones:
+                def_bone = tgt_arm.edit_bones[def_name]
+            else:
+                def_bone = tgt_arm.edit_bones.new(name=def_name)
+
+            src_dir = src_bone.tail_local - src_bone.head_local
+            length = src_dir.length
+            if length == 0:
+                continue
+
+            src_dir_normalized = src_dir.normalized()
+
+            tgt_head_world = tgt_obj.matrix_world @ tgt_bone.head_local
+            tgt_head_local = tgt_obj.matrix_world.inverted() @ tgt_head_world
+
+            def_bone.head = tgt_head_local
+            def_bone.tail = tgt_head_local + src_dir_normalized * length
+
+            def_bone.use_deform = False
+            def_bone.use_connect = False
+
+            deform_col.assign(def_bone)
+
+            def_bones.append(src_name)
+
+        for src_bone in def_arm.bones:
+            src_name = src_bone.name
+            def_name = f"{pref.deform_prefix}{src_name}"
+
+            if def_name not in tgt_arm.edit_bones:
+                continue
+
+            def_bone = tgt_arm.edit_bones[def_name]
+
+            if src_bone.parent:
+                parent_name = src_bone.parent.name
+                def_parent_name = f"{pref.deform_prefix}{parent_name}"
+
+                if def_parent_name in tgt_arm.edit_bones:
+                    def_bone.parent = tgt_arm.edit_bones[def_parent_name]
+
+        bpy.ops.object.mode_set(mode='POSE')
+
+        for tgt_name in def_bones:
+            def_name = f"{pref.deform_prefix}{tgt_name}"
+
+            if tgt_name not in tgt_obj.pose.bones:
+                continue
+            if def_name not in tgt_obj.pose.bones:
+                continue
+
+            p_def = tgt_obj.pose.bones[def_name]
+
+            if "DEFORM - CHILD_OF" in p_def.constraints:
+                continue
+
+
+            con = AddonFunctions.get_or_create_constraint(p_def, "DEFORM - ", "CHILD_OF")
+            con.target = tgt_obj
+            con.subtarget = tgt_name
+            AddonFunctions.apply_child_of_inverse(context, tgt_obj, p_def, con)
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        self.report({'INFO'}, "Deform Bones generated and connected.")
+        return {'FINISHED'}
+
+class WRYC_OT_CreateDeformBones(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_deform_bones"
+    bl_label = "Generate Deform Bones"
+    bl_description = "Generate virtual deform bones form active armature"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    is_switch_direction: bpy.props.BoolProperty(name="Switch Bones Direction",default=True)
+    switch_direction: bpy.props.EnumProperty(
+        name="Switch Direction",
+        items=[
+            ('X', "X", "X"),
+            ('-X', "-X", "-X"),
+            ('Z', "Z", "Z"),
+            ('-Z', "-Z", "-Z"),
+        ],
+        default='Z'
+    )
+    switch_angle: bpy.props.FloatProperty(name="Switch Angle",default=90)
+    def_collection_name: bpy.props.StringProperty(name="Collection Name",default="Deform Bones")
+
+    def invoke(self, context, event):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+        if obj and obj.type == 'ARMATURE':
+            layout.prop(self, "is_switch_direction", text="Switch Bones Direction")
+            if self.is_switch_direction:
+                col = layout.column(align=True)
+                split = col.split(factor=0.5)
+                split.label(text="Switch Direction:")
+                split.prop(self, "switch_direction", text="")
+                layout.prop(self, "switch_angle", text="Switch Angle")
+            col = layout.column(align=True)
+            split = col.split(factor=0.5)
+            split.label(text="Deform Collection Name:")
+            split.prop(self, "def_collection_name", text="")
+        else:
+            layout.label(text="Select an Armature", icon="ERROR")
+
+    def execute(self, context):
+        pref = AddonFunctions.get_preferences()
+        obj = context.object
+        arm_data = obj.data
+
+        selected_bones = AddonFunctions.get_selected_bones(context, self)
+        if not selected_bones:
+            return {'CANCELLED'}
+
+        selected_names = {pb.name for pb in selected_bones}
+
+        if self.def_collection_name not in arm_data.collections:
+            def_collection = arm_data.collections.new(self.def_collection_name)
+        else:
+            def_collection = arm_data.collections[self.def_collection_name]
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        edit_bones = arm_data.edit_bones
+
+        bone_map = {}
+
+        for orig_bone in arm_data.bones:
+            if orig_bone.name not in selected_names:
+                continue
+
+            if not orig_bone.use_deform:
+                continue
+
+            eb = edit_bones.get(orig_bone.name)
+            if not eb:
+                self.report({'ERROR'}, f"Can not find bone for {orig_bone.name}")
+                continue
+
+            def_name = pref.deform_prefix + orig_bone.name
+            new_bone = edit_bones.new(def_name)
+
+            new_bone.head = eb.head.copy()
+            new_bone.tail = eb.tail.copy()
+            new_bone.roll = eb.roll
+
+            if self.is_switch_direction:
+                if self.switch_direction == 'X':
+                    axis_local = mathutils.Vector((1, 0, 0))
+                elif self.switch_direction == '-X':
+                    axis_local = mathutils.Vector((-1, 0, 0))
+                elif self.switch_direction == 'Z':
+                    axis_local = mathutils.Vector((0, 0, 1))
+                elif self.switch_direction == '-Z':
+                    axis_local = mathutils.Vector((0, 0, -1))
+
+                axis_world = new_bone.matrix.to_3x3() @ axis_local
+                axis_world.normalize()
+
+                vec = new_bone.tail - new_bone.head
+
+                angle_radians = math.radians(self.switch_angle)
+                rotate = mathutils.Matrix.Rotation(angle_radians, 4, axis_world)
+
+                new_bone.tail = new_bone.head + rotate @ vec
+
+            new_bone.use_deform = False
+            new_bone.use_connect = False
+
+            def_collection.assign(new_bone)
+
+            bone_map[orig_bone.name] = def_name
+
+        for orig_name, def_name in bone_map.items():
+            orig_bone = arm_data.bones[orig_name]
+            def_bone = edit_bones[def_name]
+
+            if orig_bone.parent and orig_bone.parent.name in bone_map:
+                def_bone.parent = edit_bones[bone_map[orig_bone.parent.name]]
+            else:
+                def_bone.parent = None
+
+        bpy.ops.object.mode_set(mode='POSE')
+
+        for orig_name, def_name in bone_map.items():
+            def_pb = obj.pose.bones.get(def_name)
+
+            if def_pb:
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_LOCATION')
+                con.max_x = con.max_y = con.max_z = con.min_x = con.min_y = con.min_z = 0
+                con.use_max_x = con.use_max_y = con.use_max_z = con.use_min_x = con.use_min_y = con.use_min_z = True
+                con.owner_space = 'LOCAL_WITH_PARENT'
+                con.influence = 1.0
+
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_ROTATION')
+                con.max_x = con.max_y = con.max_z = con.min_x = con.min_y = con.min_z = 0
+                con.use_limit_x = con.use_limit_y = con.use_limit_z = True
+                con.owner_space = 'LOCAL_WITH_PARENT'
+                con.influence = 1.0
+
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_SCALE')
+                con.max_x = con.max_y = con.max_z = con.min_x = con.min_y = con.min_z = 1
+                con.use_max_x = con.use_max_y = con.use_max_z = con.use_min_x = con.use_min_y = con.use_min_z = True
+                con.owner_space = 'LOCAL_WITH_PARENT'
+                con.influence = 1.0
+
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'CHILD_OF')
+                con.target = obj
+                con.subtarget = orig_name
+                obj.data.bones.active = obj.data.bones[def_name]
+                bpy.ops.constraint.childof_set_inverse(constraint=con.name, owner='BONE')
+
+
+        self.report({'INFO'}, f"Generated deform bones.")
+        return {'FINISHED'}
+
+class WRYC_OT_SetInverseAllChildOf(bpy.types.Operator):
+    bl_idname = "wryc.ot_set_inverse_all_child_of"
+    bl_label = "Set Inverse All"
+    bl_description = "Set Inverse to all child of constraint in selected bones"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         if not AddonFunctions.check_pose_mode(context, self):
             return {'CANCELLED'}
 
-        bones = AddonFunctions.get_selected_bones(context, self)
-        if not bones:
+        selected_bones = AddonFunctions.get_selected_bones(context, self)
+        if not selected_bones:
             return {'CANCELLED'}
 
+        obj = bpy.context.object
+
+        bpy.ops.pose.select_all(action='DESELECT')
+
+        for pb in selected_bones:
+            cons = [c for c in pb.constraints if c.type == 'CHILD_OF' and c.target]
+            if not cons:
+                continue
+
+            for con in cons:
+                AddonFunctions.apply_child_of_inverse(context, obj, pb, con)
+
+        self.report({'INFO'}, "Pose mode is ON, Set Inverse All")
+        return {'FINISHED'}
+
+class WRYC_OT_RemoveConstrains(bpy.types.Operator):
+    bl_idname = "wryc.ot_remove_constrains"
+    bl_label = "Remove Constraints"
+    bl_description = "Remove seleted bones constraints"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+
+        selected_bones = AddonFunctions.get_selected_bones(context, self)
+        if not selected_bones:
+            return {'CANCELLED'}
+
+        for pb in selected_bones:
+            for con in list(pb.constraints):
+                pb.constraints.remove(con)
+
         self.report({'INFO'}, "Pose mode is ON, Remove Selected Bones Constraints")
-
-        selected_bones = bpy.context.selected_pose_bones
-        for bone in selected_bones:
-            for con in list(bone.constraints):
-                bone.constraints.remove(con)
-
         return {'FINISHED'}
 
 class WRYC_OT_CreateFingerController(bpy.types.Operator):
@@ -1059,309 +1360,4 @@ class WRYC_OT_RenameTool(bpy.types.Operator):
                     self.report({'INFO'}, f"{obj.name} has been renamed to '{new_name}'")
 
         self.report({'INFO'}, f"{renamed_count} vertex group names have been renamed")
-        return {'FINISHED'}
-
-    def get_Target_bone_enum(self, context):
-        arm = self.target_armature
-        if arm:
-            return [(b.name, b.name, "") for b in arm.bones]
-        return []
-
-#__EXPORT TOOL__
-class WRYC_OT_SelectExportActions(bpy.types.Operator):
-    bl_idname = "wryc.ot_select_export_actions"
-    bl_label = "Select Export Actions"
-    bl_description = "Only actions that use or set fake_user can be selected."
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def invoke(self, context, event):
-        settings = context.scene.export_to_unreal
-        exiting_names = {a.name for a in settings.export_actions}
-        old_states = {item.name: item.enabled for item in settings.export_actions}
-
-        if bpy.data.actions:
-            for action in bpy.data.actions:
-                if not action.users and not action.use_fake_user:
-                    continue
-
-                if action.name not in exiting_names:
-                    item = settings.export_actions.add()
-                    item.name = action.name
-                    item.enabled = old_states.get(action.name, False)
-
-        valid_names = {a.name for a in bpy.data.actions}
-        to_remove = [i for i, a in enumerate(settings.export_actions) if a.name not in valid_names]
-        for i in reversed(to_remove):
-            settings.export_actions.remove(i)
-
-        AddonFunctions.sort_actions(settings.export_actions)
-        return context.window_manager.invoke_props_dialog(self)
-
-    def draw(self, context):
-        layout = self.layout
-        actions = context.scene.export_to_unreal.export_actions
-
-        if not bpy.data.actions:
-            layout.label(text="No actions selected")
-            return
-
-        row = layout.row(align=True)
-        row.operator("wryc.ot_enable_all_export_actions", text="Enable All")
-        row.operator("wryc.ot_disable_all_export_actions", text="Disable All")
-
-        box = layout.box()
-        for entry in actions:
-            box.prop(entry, "enabled", text=entry.name)
-
-    def execute(self, context):
-        settings = context.scene.export_to_unreal
-        selected_actions = [a.name for a in settings.export_actions if a.enabled]
-        if not selected_actions:
-            self.report({'ERROR'}, "No action can export (Only using or fake_user actions can be selected).")
-            return {'CANCELLED'}
-        return {'FINISHED'}
-
-
-class WRYC_OT_EnableAllExportActions(bpy.types.Operator):
-    bl_idname = "wryc.ot_enable_all_export_actions"
-    bl_label = "Enable All Actions"
-    bl_options = {'INTERNAL'}
-
-    def execute(self, context):
-        for entry in context.scene.export_to_unreal.export_actions:
-            entry.enabled = True
-        return {'FINISHED'}
-
-class WRYC_OT_DisableAllExportActions(bpy.types.Operator):
-    bl_idname = "wryc.ot_disable_all_export_actions"
-    bl_label = "Disable All Actions"
-    bl_options = {'INTERNAL'}
-
-    def execute(self, context):
-        for entry in context.scene.export_to_unreal.export_actions:
-            entry.enabled = False
-        return {'FINISHED'}
-
-class WRYC_OT_ExportToUnreal(bpy.types.Operator, ExportHelper):
-    bl_idname = "wryc.ot_export_to_unreal"
-    bl_label = "BL Export to Unreal"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=400)
-
-    def draw(self, context):
-        layout = self.layout
-
-        settings = context.scene.export_to_unreal
-
-        box_mesh = layout.box()
-        box_mesh.label(text="Mesh/Armature")
-        box_mesh.prop(settings, "mesh_path", text="Mesh Path:")
-        row = box_mesh.row(align=True)
-        row.prop(settings, "apply_modifiers", text="Apply Modifiers")
-        box_mesh.prop(settings, "skeletal_prefix", text="Skeletal Prefix:")
-
-        box_action = layout.box()
-        box_action.label(text="Action")
-        box_action.prop(settings, "action_path", text="Action Path")
-        box_action.prop(settings, "export_type", text="Export Type")
-        if settings.export_type == "BATCH":
-            box_action.operator("wryc.ot_select_export_actions", text="Export Actions")
-
-        row = box_action.row(align=True)
-        row.prop(settings, "is_add_start_end", text="Add Start/End Keyframes")
-        row.prop(settings, "bake_nla_strips", text="Bake NLA Strips")
-        box_action.prop(settings, "action_prefix", text="Action Prefix:")
-
-        box_advanced = layout.box()
-        box_advanced.label(text="Advanced Settings")
-        row = box_advanced.row()
-        row.prop(settings, "only_deform", text="Only Deform Bones")
-        row.prop(settings, "add_leaf", text="Add Leaf Bones")
-
-        row = box_advanced.row()
-        col = row.column(align=True)
-        split = col.split(factor=0.7, align=True)
-        split.label(text="Primary Bone Axis")
-        split.prop(settings, "primary_bone_axis", text="")
-        split = col.split(factor=0.7, align=True)
-        split.label(text="Secondary Bone Axis")
-        split.prop(settings, "secondary_bone_axis", text="")
-
-        col = row.column(align=True)
-        split = col.split(factor=0.7, align=True)
-        split.label(text="FBX Axis Forward")
-        split.prop(settings, "axis_forward", text="")
-        split = col.split(factor=0.7, align=True)
-        split.label(text="FBX Axis Up")
-        split.prop(settings, "axis_up", text="")
-
-    def execute(self, context):
-        settings = context.scene.export_to_unreal
-
-        armatures = [obj for obj in context.selected_objects if obj.type == 'ARMATURE']
-        if not armatures:
-            self.report({'ERROR'}, "No armature selected")
-            return {'CANCELLED'}
-
-        meshs = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        if settings.mesh_path.strip() and not meshs:
-            self.report({'ERROR'}, "No mesh selected")
-            return {'CANCELLED'}
-
-        arm = armatures[0]
-        armature_name = arm.name
-
-        selected_objects = context.selected_objects[:]
-        active_obj = context.view_layer.objects.active
-
-        original_name = arm.name
-        original_action = arm.animation_data.action if arm.animation_data else None
-
-        try:
-            bpy.context.view_layer.objects.active = arm
-            arm.name = "Armature"
-            if arm.data.users > 1:
-                arm.data = arm.data.copy()
-
-            bpy.ops.object.mode_set(mode='EDIT')
-            edit_bones = arm.data.edit_bones
-
-            if "root" not in edit_bones:
-                root = edit_bones.new("root")
-                root.head = (0, 0, 0)
-                root.tail = (0, 0.1, 0)
-                for b in edit_bones:
-                    if b.name != "root" and b.parent is None:
-                        b.parent = root
-            else:
-                root = edit_bones["root"]
-                root.head = (0, 0, 0)
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-            arm.scale *= 100.0
-            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-
-            for action in bpy.data.actions:
-                for fcurve in action.fcurves:
-                    if fcurve.data_path.endswith('location'):
-                        for kp in fcurve.keyframe_points:
-                            kp.co.y *= 100
-                            kp.handle_left.y *= 100
-                            kp.handle_right.y *= 100
-
-            bpy.ops.object.select_all(action='DESELECT')
-            arm.select_set(True)
-            for mesh in meshs:
-                mesh.select_set(True)
-
-            bpy.context.view_layer.objects.active = arm
-
-            # Mesh/Armature
-            if settings.mesh_path.strip():
-                export_dir = bpy.path.abspath(settings.mesh_path)
-                sk_file_name = settings.skeletal_prefix + armature_name
-                export_file = os.path.join(export_dir, sk_file_name + ".fbx")
-
-                AddonFunctions.do_export(
-                    context, filepath=export_file, object_type={'ARMATURE', 'MESH'},scale=0.01, bake_anim=False
-                )
-                self.report({'INFO'}, f"Mesh/Armature Exported Successfully")
-
-            #Action
-            if settings.action_path.strip():
-                bpy.ops.object.select_all(action='DESELECT')
-                arm.select_set(True)
-                bpy.context.view_layer.objects.active = arm
-
-                if settings.export_type == "SELECTED":
-                    action = arm.animation_data.action if arm.animation_data else None
-                    if not action:
-                        self.report({'ERROR'}, "No active action in selected armature")
-                    else:
-                        export_name = settings.action_prefix + action.name
-                        act_file = bpy.path.abspath(
-                            settings.action_path + "/" +  export_name + ".fbx"
-                        )
-                        arm.animation_data.action = action
-
-                        #Temporarily modify scene timeline by action
-                        orig_range = context.scene.frame_start, context.scene.frame_end
-
-                        AddonFunctions.do_export(
-                            context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True, bake_all=False, action=action
-                        )
-
-                        #Restore timeline to origin
-                        context.scene.frame_start, context.scene.frame_end = orig_range
-
-                        self.report({'INFO'}, f"Exported selected action successfully: {act_file}")
-    
-                elif settings.export_type == "BATCH":
-
-                    # Temporarily modify scene timeline by action
-                    orig_range = context.scene.frame_start, context.scene.frame_end
-
-                    enabled_entries = [a for a in settings.export_actions if a.enabled]
-
-                    for entry in enabled_entries:
-                        action = bpy.data.actions.get(entry.name)
-                        if not action:
-                            continue
-
-                        export_name = settings.action_prefix + action.name
-                        act_file = bpy.path.abspath(
-                               settings.action_path + "/" + export_name + ".fbx"
-                        )
-                        arm.animation_data.action = action
-                        AddonFunctions.do_export(
-                            context, filepath=act_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True, bake_all=False, action=action
-                        )
-
-                    # Restore timeline to origin
-                    context.scene.frame_start, context.scene.frame_end = orig_range
-
-                    self.report({'INFO'}, f"Exported action by batch successfully")
-    
-                elif settings.export_type == "ALL":
-                    blend_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
-                    export_file = os.path.join(bpy.path.abspath(settings.action_path), blend_name + ".fbx")
-                    if bpy.data.actions:
-                        arm.animation_data.action = bpy.data.actions[0]
-
-                    AddonFunctions.do_export(
-                        context, filepath=export_file, object_type={'ARMATURE'}, scale=0.01, bake_anim=True,bake_all=True
-                    )
-                    self.report({'INFO'}, f"Exported all action successfully")
-
-                else:
-                    self.report({'INFO'}, "Action path is empty, skip action export")
-
-        finally:
-            bpy.context.view_layer.objects.active = arm
-            if arm.data.users > 1:
-                arm.data = arm.data.copy()
-            arm.name = original_name
-
-            arm.scale *= 0.01
-            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-
-            for action in bpy.data.actions:
-                for fcurve in action.fcurves:
-                    if fcurve.data_path.endswith('location'):
-                        for kp in fcurve.keyframe_points:
-                            kp.co.y /= 100
-                            kp.handle_left.y /= 100
-                            kp.handle_right.y /= 100
-
-            if original_action:
-                arm.animation_data.action = original_action
-
-            bpy.ops.object.select_all(action='DESELECT')
-            for obj in selected_objects:
-                obj.select_set(True)
-            if active_obj:
-                context.view_layer.objects.active = active_obj
-
         return {'FINISHED'}

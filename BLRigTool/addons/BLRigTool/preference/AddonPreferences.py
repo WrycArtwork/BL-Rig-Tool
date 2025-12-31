@@ -17,6 +17,11 @@ class WRYCAddonPreferences(AddonPreferences):
         default=os.path.join(os.path.dirname(__file__), "..", "assets"),
     )
 
+    deform_prefix: StringProperty(
+        name="Deform Prefix",
+        default="DEF_",
+    )
+
     target_prefix: StringProperty(
         name="Target Prefix",
         default="TB_",
@@ -44,6 +49,7 @@ class WRYCAddonPreferences(AddonPreferences):
 
         layout = self.layout
         layout.label(text="Generated bones' prefix")
+        layout.prop(self, "deform_prefix",text="Deform")
         layout.prop(self, "target_prefix", text="Target:")
         layout.prop(self, "control_prefix", text="Control:")
         layout.prop(self, "gizmo_prefix", text="Gizmo:")

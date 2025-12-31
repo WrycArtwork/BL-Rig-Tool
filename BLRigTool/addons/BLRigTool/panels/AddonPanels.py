@@ -67,7 +67,12 @@ class WRYC_PT_GenerateConstraint(BasePanel, bpy.types.Panel):
         layout.label(text="Remove Constraints")
         layout.operator("wryc.ot_remove_constrains")
 
-        layout.label(text="Add Constraints")
+        layout.label(text="Generate Deform Bones")
+        layout.operator("wryc.ot_connect_deform_armature")
+        layout.operator("wryc.ot_create_deform_bones")
+        layout.operator("wryc.ot_set_inverse_all_child_of")
+
+        layout.label(text="Generate Constraints")
         layout.operator("wryc.ot_create_arm_controller")
         layout.operator("wryc.ot_create_leg_controller")
         #layout.operator("wryc.ot_create_foot_controller")
@@ -161,6 +166,3 @@ class UI_UL_list(bpy.types.UIList):
             row.label(text=item.target)
         elif self.layout_type =='GRID':
             layout.label(text="")
-
-
-

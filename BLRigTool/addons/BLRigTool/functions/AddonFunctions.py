@@ -1,5 +1,6 @@
 import difflib
 import math
+from typing import final
 
 import bpy
 import os
@@ -248,7 +249,18 @@ def get_bone_shapes_library(self, context):
     return items
 
 #__GENERATE CONSTRAINT__
+def apply_child_of_inverse(context, obj, pose_bone, constraint):
+    arm = obj.data
 
+    bpy.ops.pose.select_all(action='DESELECT')
+
+    arm.bones.active = arm.bones[pose_bone.name]
+    arm.bones[pose_bone.name].select = True
+
+    bpy.ops.constraint.childof_set_inverse(
+        constraint=constraint.name,
+        owner='BONE'
+    )
 def get_or_create_constraint(pb, prefix, ctype):
     con = None
     for existing in pb.constraints:
@@ -458,48 +470,3 @@ def target_bone_items(self, context, edit_text):
     matches = difflib.get_close_matches(edit_text, tgt_names, n=5, cutoff=0.3)
 
     return [m for m in matches]
-
-#__EXPORT TOOL__
-def set_timeline(context, action):
-    scene = context.scene
-
-    if action:
-        start, end = map(int, action.frame_range)
-        scene.frame_start = start
-        scene.frame_end = end
-    else:
-        print("No valid action provided.")
-
-def do_export(context, filepath, object_type={'ARMATURE'}, scale=1.0, bake_anim=False, bake_all=False, action=None):
-    settings = context.scene.export_to_unreal
-
-    if bake_all == False:
-        scene = context.scene
-        if action:
-            start, end = map(int, action.frame_range)
-            scene.frame_start = start
-            scene.frame_end = end
-
-    bpy.ops.export_scene.fbx(
-        object_types=object_type,
-        filepath=filepath,
-        use_selection=True,
-        apply_unit_scale=True,
-        global_scale=scale,
-        bake_anim_use_all_bones=True,
-        use_armature_deform_only=settings.only_deform,
-        add_leaf_bones=settings.add_leaf,
-        apply_scale_options='FBX_SCALE_ALL',
-        armature_nodetype='ROOT',
-        primary_bone_axis=settings.primary_bone_axis,
-        secondary_bone_axis=settings.secondary_bone_axis,
-        axis_forward=settings.axis_forward,
-        axis_up=settings.axis_up,
-        bake_anim=bake_anim,
-        bake_anim_use_all_actions=bake_all,
-        bake_anim_force_startend_keying=settings.is_add_start_end,
-        bake_anim_use_nla_strips=settings.bake_nla_strips,
-        mesh_smooth_type='EDGE',
-        use_triangles=True,
-        use_tspace=True,
-    )

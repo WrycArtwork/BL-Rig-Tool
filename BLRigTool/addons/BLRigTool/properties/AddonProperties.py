@@ -90,6 +90,18 @@ class BoneDisplaySettings(PropertyGroup):
     rot_z: FloatProperty(name="Rotate Z", default=0.0)
 
 #__GENERATE CONSTRAINTS__
+class DeformSettings(bpy.types.PropertyGroup):
+    src_obj: bpy.props.PointerProperty(
+        name="Source Armature",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'ARMATURE'
+    )
+
+    tgt_obj: bpy.props.PointerProperty(
+        name="Target Armature",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'ARMATURE'
+    )
 
 #__RETARGET ACTIONS__
 class BoneMapItems(PropertyGroup):
@@ -167,118 +179,3 @@ class RenameTool(PropertyGroup):
     replace_str: StringProperty(name="Replace", default="")
     prefix_str: StringProperty(name="Prefix", default="")
     suffix_str: StringProperty(name="Suffix", default="")
-
-#__EXPORT TOOL__
-class ExportToUnreal(PropertyGroup):
-    #Mesh/Armature
-    mesh_path: StringProperty(
-        name="Mesh Path",
-        subtype='DIR_PATH',
-        default="//"
-    )
-
-    apply_modifiers: BoolProperty(
-        name="Apply Modifiers",
-        default=True
-    )
-
-    skeletal_prefix: StringProperty(
-        name="Skeletal Prefix",
-        default=""
-    )
-
-    #Action
-    export_actions: CollectionProperty(type=ActionEntry)
-
-    action_path: StringProperty(
-        name="Action Path",
-        subtype='DIR_PATH',
-        default="//"
-    )
-
-    export_type: EnumProperty(
-        name="Export Type",
-        items=[
-            ('SELECTED',"Selected Action", "Selected Action"),
-            ('BATCH', "Batch", "Batch"),
-            ('ALL', "All Actions", "All Actions"),
-        ],
-        default='SELECTED'
-    )
-
-    is_add_start_end: BoolProperty(
-        name="Add Start/End Keyframes",
-        default=False
-    )
-
-    bake_nla_strips: BoolProperty(
-        name="Bake NLA Strips",
-        default=False
-    )
-
-    action_prefix: StringProperty(
-        name="Action Prefix",
-        default=""
-    )
-    #Advanced
-    only_deform: BoolProperty(
-        name="Only Deform Bones",
-        default=True
-    )
-
-    add_leaf: BoolProperty(
-        name="Add Leaf Bones",
-        default=False
-    )
-
-    primary_bone_axis: EnumProperty(
-        name="Primary Bone Axis",
-        items=[
-            ('X', "X", "X"),
-            ('-X', "-X", "-X"),
-            ('Y', "Y", "Y"),
-            ('-Y', "-Y", "-Y"),
-            ('Z', "Z", "Z"),
-            ('-Z', "-Z", "-Z"),
-        ],
-        default='Y'
-    )
-
-    secondary_bone_axis: EnumProperty(
-        name="Secondary Bone Axis",
-        items=[
-            ('X', "X", "X"),
-            ('-X', "-X", "-X"),
-            ('Y', "Y", "Y"),
-            ('-Y', "-Y", "-Y"),
-            ('Z', "Z", "Z"),
-            ('-Z', "-Z", "-Z"),
-        ],
-        default='X'
-    )
-
-    axis_forward: EnumProperty(
-        name="FBX Axis Forward",
-        items=[
-            ('X', "X", "X"),
-            ('-X', "-X", "-X"),
-            ('Y', "Y", "Y"),
-            ('-Y', "-Y", "-Y"),
-            ('Z', "Z", "Z"),
-            ('-Z', "-Z", "-Z"),
-        ],
-        default='-Z'
-    )
-
-    axis_up: EnumProperty(
-        name="FBX Axis Up",
-        items=[
-            ('X', "X", "X"),
-            ('-X', "-X", "-X"),
-            ('Y', "Y", "Y"),
-            ('-Y', "-Y", "-Y"),
-            ('Z', "Z", "Z"),
-            ('-Z', "-Z", "-Z"),
-        ],
-        default='Y'
-    )

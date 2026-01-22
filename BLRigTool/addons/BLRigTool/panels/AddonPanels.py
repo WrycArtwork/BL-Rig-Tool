@@ -12,20 +12,31 @@ class BasePanel(object):
 
 @reg_order(0)
 class WRYC_PT_CustomDisplayBone(BasePanel, bpy.types.Panel):
-    bl_label = "Custom Display Shape"
+    bl_label = "Custom Display Bone"
     bl_idname = "WRYC_PT_custom_display_bone"
 
     def draw(self, context):
 
         layout = self.layout
+        settings = context.scene.bone_display_settings
+
+        layout.label(text="Shape")
         row = layout.row(align=True)
         row.menu("WRYC_MT_generate_icon_menu", icon='DOWNARROW_HLT')
         row.prop(context.window_manager.bone_shapes_library, "bone_shape", expand=False, text="")
 
-        settings = context.scene.bone_display_settings
-
         layout.prop(settings, "scale_bone_length_enable")
         layout.operator("wryc.ot_custom_bone_shape")
+
+        layout.label(text="Color")
+        col = layout.column(align=True)
+        split = col.split(factor=0.4, align=True)
+        split.label(text="Bone Color:")
+        split.prop(settings, "bone_color", text="")
+        split = col.split(factor=0.4, align=True)
+        split.label(text="Pose Bone Color:")
+        split.prop(settings, "pose_bone_color", text="")
+        layout.operator("wryc.ot_custom_bone_color")
 
         layout.label(text="Scale")
         layout.prop(settings, "scale", text="Scale All")

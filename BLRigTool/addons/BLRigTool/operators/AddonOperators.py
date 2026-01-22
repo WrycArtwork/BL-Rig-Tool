@@ -65,6 +65,7 @@ class WRYC_OT_RemoveBoneShapeIcon(bpy.types.Operator):
 
     def execute(self, context):
         AddonFunctions.remove_icon(self, context)
+
         return {'FINISHED'}
 
 class WRYC_OT_ReloadBoneShapeIcons(bpy.types.Operator):
@@ -75,7 +76,6 @@ class WRYC_OT_ReloadBoneShapeIcons(bpy.types.Operator):
     def execute(self,context):
         AddonFunctions.unload_icon_preview()
         AddonFunctions.load_icon_preview()
-
         context.window_manager.bone_shapes_library.bone_shape = context.window_manager.bone_shapes_library.bone_shape
 
         return {'FINISHED'}
@@ -87,7 +87,6 @@ class WRYC_OT_CustomBoneShape(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-
         if not AddonFunctions.check_pose_mode(context, self):
             return {'CANCELLED'}
 
@@ -115,9 +114,38 @@ class WRYC_OT_CustomBoneShape(bpy.types.Operator):
         for pbone in bones:
             pbone.custom_shape = shape_obj
             pbone.use_custom_shape_bone_size = settings.scale_bone_length_enable
-        self.report({'INFO'}, f"Apply bone shape shape name = {shape_name}")
 
+        self.report({'INFO'}, f"Success apply bone shape.")
         return {'FINISHED'}
+
+class WRYC_OT_CustomBoneColor(bpy.types.Operator):
+    bl_idname = "wryc.ot_custom_bone_color"
+    bl_label = "Apply Color"
+    bl_description = "Apply bone color to the selection bones"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+
+        bones = AddonFunctions.get_selected_bones(context, self)
+        if not bones:
+            return {'CANCELLED'}
+
+        armature = context.active_object
+
+        settings = context.scene.bone_display_settings
+        bone_color = settings.bone_color
+        pose_bone_color = settings.pose_bone_color
+
+        for pbone in bones:
+            armature.data.bones[pbone.name].color.palette = bone_color
+            armature.pose.bones[pbone.name].color.palette = pose_bone_color
+
+        self.report({'INFO'}, "Success apply bone color")
+        return {'FINISHED'}
+
+
 
 class WRYC_OT_CustomBoneScale(bpy.types.Operator):
     bl_idname = "wryc.ot_custom_bone_scale"
@@ -126,15 +154,12 @@ class WRYC_OT_CustomBoneScale(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-
         if not AddonFunctions.check_pose_mode(context, self):
             return {'CANCELLED'}
 
         bones = AddonFunctions.get_selected_bones(context, self)
         if not bones:
             return {'CANCELLED'}
-
-        self.report({'INFO'}, "Pose mode is ON, Apply bone scale")
 
         settings = context.scene.bone_display_settings
 
@@ -148,6 +173,7 @@ class WRYC_OT_CustomBoneScale(bpy.types.Operator):
         for pbone in bones:
             pbone.custom_shape_scale_xyz = (scale_x, scale_y, scale_z)
 
+        self.report({'INFO'}, "Success apply bone scale")
         return {'FINISHED'}
 
 class WRYC_OT_CustomBoneLoc(bpy.types.Operator):
@@ -157,15 +183,12 @@ class WRYC_OT_CustomBoneLoc(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-
         if not AddonFunctions.check_pose_mode(context, self):
             return {'CANCELLED'}
 
         bones = AddonFunctions.get_selected_bones(context, self)
         if not bones:
             return {'CANCELLED'}
-
-        self.report({'INFO'}, "Pose mode is ON, Apply bone Translation")
 
         settings = context.scene.bone_display_settings
 
@@ -174,6 +197,7 @@ class WRYC_OT_CustomBoneLoc(bpy.types.Operator):
                             settings.loc_y,
                             settings.loc_z)
 
+        self.report({'INFO'}, "Success apply bone Translation")
         return {'FINISHED'}
 
 class WRYC_OT_CustomBoneRot(bpy.types.Operator):
@@ -183,15 +207,12 @@ class WRYC_OT_CustomBoneRot(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-
         if not AddonFunctions.check_pose_mode(context, self):
             return {'CANCELLED'}
 
         bones = AddonFunctions.get_selected_bones(context, self)
         if not bones:
             return {'CANCELLED'}
-
-        self.report({'INFO'}, "Pose mode is ON, Apply bone Rotation")
 
         settings = context.scene.bone_display_settings
 
@@ -200,6 +221,7 @@ class WRYC_OT_CustomBoneRot(bpy.types.Operator):
                                     math.radians(settings.rot_y),
                                     math.radians(settings.rot_z))
 
+        self.report({'INFO'}, "Success apply bone Rotation")
         return {'FINISHED'}
 
 class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
@@ -208,15 +230,12 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-
         if not AddonFunctions.check_pose_mode(context, self):
             return {'CANCELLED'}
 
         bones = AddonFunctions.get_selected_bones(context, self)
         if not bones:
             return {'CANCELLED'}
-
-        self.report({'INFO'}, "Pose mode is ON, Apply All")
 
         shape_name = context.window_manager.bone_shapes_library.bone_shape
         if not shape_name or shape_name == "None":
@@ -248,6 +267,7 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
             pbone.custom_shape_translation = (settings.loc_x, settings.loc_y, settings.loc_z)
             pbone.custom_shape_rotation_euler = (math.radians(settings.rot_x), math.radians(settings.rot_y),math.radians(settings.rot_z))
 
+        self.report({'INFO'}, "Success apply All")
         return {'FINISHED'}
 
 #__GENERATE CONSTRAINTS__
@@ -518,7 +538,6 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
                 con.subtarget = orig_name
                 obj.data.bones.active = obj.data.bones[def_name]
                 bpy.ops.constraint.childof_set_inverse(constraint=con.name, owner='BONE')
-
 
         self.report({'INFO'}, f"Generated deform bones.")
         return {'FINISHED'}

@@ -78,6 +78,16 @@ class BoneDisplaySettings(PropertyGroup):
         default=True
     )
 
+    bone_color: EnumProperty(
+        name="Bone Color",
+        items=AddonFunctions.bone_color_items
+    )
+
+    pose_bone_color: EnumProperty(
+        name="Pose Bone Color",
+        items=AddonFunctions.bone_color_items
+    )
+
     scale: FloatProperty(name="Scale All", default=1.0)
     scale_x: FloatProperty(name="Scale x", default=1.0)
     scale_y: FloatProperty(name="Scale y", default=1.0)

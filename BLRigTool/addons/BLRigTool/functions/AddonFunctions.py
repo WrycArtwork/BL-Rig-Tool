@@ -248,6 +248,29 @@ def get_bone_shapes_library(self, context):
 
     return items
 
+def bone_color_items(self, context):
+    palette_prop = bpy.types.BoneColor.bl_rna.properties["palette"]
+
+    items = []
+    for i, e in enumerate(palette_prop.enum_items):
+        icon = 'NONE'
+
+        if e.identifier.startswith("THEME"):
+            num = e.identifier[-2:]
+            icon = f'COLORSET_{num}_VEC'
+        elif e.identifier == 'CUSTOM':
+            icon = 'COLORSET_CUSTOM_VEC'
+
+        items.append((
+            e.identifier,
+            e.name,
+            e.description,
+            icon,
+            i
+        ))
+
+    return items
+
 #__GENERATE CONSTRAINT__
 def apply_child_of_inverse(context, obj, pose_bone, constraint):
     arm = obj.data

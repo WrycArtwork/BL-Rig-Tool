@@ -135,12 +135,10 @@ class WRYC_OT_CustomBoneColor(bpy.types.Operator):
         armature = context.active_object
 
         settings = context.scene.bone_display_settings
-        bone_color = settings.bone_color
-        pose_bone_color = settings.pose_bone_color
 
         for pbone in bones:
-            armature.data.bones[pbone.name].color.palette = bone_color
-            armature.pose.bones[pbone.name].color.palette = pose_bone_color
+            armature.data.bones[pbone.name].color.palette = settings.bone_color
+            armature.pose.bones[pbone.name].color.palette = settings.pose_bone_color
 
         self.report({'INFO'}, "Success apply bone color")
         return {'FINISHED'}
@@ -247,12 +245,13 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
             if shape_name in data_from.objects:
                 data_to.objects = [shape_name]
 
+        settings = context.scene.bone_display_settings
+        armature = context.active_object
+
         shape_obj = bpy.data.objects.get(shape_name)
         if not shape_obj:
             self.report({'ERROR'}, f"Object '{shape_name}' not found or cannot be loaded")
             return {'CANCELLED'}
-
-        settings = context.scene.bone_display_settings
 
         if settings.scale_enable:
             scale_x = scale_y = scale_z = settings.scale
@@ -262,6 +261,8 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
             scale_z = settings.scale_z
 
         for pbone in bones:
+            armature.data.bones[pbone.name].color.palette = settings.bone_color
+            armature.pose.bones[pbone.name].color.palette = settings.pose_bone_color
             pbone.custom_shape = shape_obj
             pbone.custom_shape_scale_xyz = (scale_x, scale_y, scale_z)
             pbone.custom_shape_translation = (settings.loc_x, settings.loc_y, settings.loc_z)

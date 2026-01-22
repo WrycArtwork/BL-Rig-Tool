@@ -21,7 +21,7 @@
 
 
 ## 自訂骨骼顯示形狀:
-![custom display 介面](https://github.com/user-attachments/assets/bbc540d0-85ad-4fde-a673-5031d2a66e3f)
+![custom display 介面](https://github.com/user-attachments/assets/91cb8dfc-8ab2-4bac-b643-c02a21b829de)
 ###
 
 ## 生成約束:

@@ -1,7 +1,6 @@
 # BL Rig Tool
-![介面](https://github.com/user-attachments/assets/0391e35a-4d71-4d08-bf5d-0a76a7b60f7d)<br><br>
-[English](#english) | [繁體中文](#繁體中文)
-
+[English Guide](#english) | [繁體中文指南](#繁體中文) <br><br>
+![介面](https://github.com/user-attachments/assets/0391e35a-4d71-4d08-bf5d-0a76a7b60f7d)<br>
 ---
 
 ## English

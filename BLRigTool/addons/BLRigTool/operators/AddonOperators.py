@@ -1,21 +1,13 @@
 import difflib
 import json
-import os
-from _ast import operator
-from itertools import chain
-from re import search, split
 
 import bpy
 import math
 import mathutils
 
-from bpy_extras.io_utils import ExportHelper
-from setuptools.command.rotate import rotate
-
-from ..config import __addon_name__
 from ..functions import AddonFunctions
 from ..properties import AddonProperties
-from ..preference import AddonPreferences
+from ..utils import AddonUtils
 
 #__CUSTOM DISPLAY SHAPE__
 class WRYC_OT_GenerateShapeIcon(bpy.types.Operator):
@@ -40,7 +32,7 @@ class WRYC_OT_GenerateShapeIcon(bpy.types.Operator):
     )
 
     keep_generated: bpy.props.BoolProperty(
-        name = "Keep generated",
+        name = "Keep generated camera & light",
         default = False,
         description = "Keep generated camera and light in scene",
     )
@@ -76,7 +68,7 @@ class WRYC_OT_ReloadBoneShapeIcons(bpy.types.Operator):
     def execute(self,context):
         AddonFunctions.unload_icon_preview()
         AddonFunctions.load_icon_preview()
-        context.window_manager.bone_shapes_library.bone_shape = context.window_manager.bone_shapes_library.bone_shape
+        context.scene.bone_display_settings.bone_shape = context.scene.bone_display_settings.bone_shape
 
         return {'FINISHED'}
 
@@ -94,7 +86,7 @@ class WRYC_OT_CustomBoneShape(bpy.types.Operator):
         if not bones:
             return {'CANCELLED'}
 
-        shape_name = context.window_manager.bone_shapes_library.bone_shape
+        shape_name = context.scene.bone_display_settings.bone_shape
         if not shape_name or shape_name == "None":
             self.report({'INFO'}, "No bone shape selected")
             return {'CANCELLED'}
@@ -142,8 +134,6 @@ class WRYC_OT_CustomBoneColor(bpy.types.Operator):
 
         self.report({'INFO'}, "Success apply bone color")
         return {'FINISHED'}
-
-
 
 class WRYC_OT_CustomBoneScale(bpy.types.Operator):
     bl_idname = "wryc.ot_custom_bone_scale"
@@ -222,6 +212,53 @@ class WRYC_OT_CustomBoneRot(bpy.types.Operator):
         self.report({'INFO'}, "Success apply bone Rotation")
         return {'FINISHED'}
 
+class WRYC_OT_CopySelectedBoneDisplayConfig(bpy.types.Operator):
+    bl_idname = "wryc.ot_copy_selected_bone_display_config"
+    bl_label = "Copy From Selected"
+    bl_description = "Copy bone display config from selected bone."
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+
+        bones = AddonFunctions.get_selected_bones(context, self)
+        if not bones:
+            return {'CANCELLED'}
+
+        settings = context.scene.bone_display_settings
+        pbone = bones[0]
+        armature = context.active_object
+
+        if pbone.custom_shape:
+            settings.bone_shape = pbone.custom_shape.name
+
+        settings.scale_bone_length_enable = pbone.use_custom_shape_bone_size
+
+        settings.bone_color = armature.data.bones[pbone.name].color.palette
+        settings.pose_bone_color = armature.pose.bones[pbone.name].color.palette
+
+        settings.loc_x = pbone.custom_shape_translation.x
+        settings.loc_y = pbone.custom_shape_translation.y
+        settings.loc_z = pbone.custom_shape_translation.z
+
+        rot = pbone.custom_shape_rotation_euler
+        settings.rot_x = math.degrees(rot.x)
+        settings.rot_y = math.degrees(rot.y)
+        settings.rot_z = math.degrees(rot.z)
+
+        scale = pbone.custom_shape_scale_xyz
+        if scale.x == scale.y == scale.z:
+            settings.scale_enable = True
+            settings.scale = scale.x
+        else:
+            settings.scale_enable = False
+            settings.scale_x = scale.x
+            settings.scale_y = scale.y
+            settings.scale_z = scale.z
+
+        return {'FINISHED'}
+
 class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
     bl_idname = "wryc.ot_custom_display_bone"
     bl_label = "Apply All"
@@ -235,7 +272,7 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
         if not bones:
             return {'CANCELLED'}
 
-        shape_name = context.window_manager.bone_shapes_library.bone_shape
+        shape_name = context.scene.bone_display_settings.bone_shape
         if not shape_name or shape_name == "None":
             self.report({'INFO'}, "No bone shape selected")
             return {'CANCELLED'}
@@ -264,6 +301,7 @@ class WRYC_OT_CustomDisplayBone(bpy.types.Operator):
             armature.data.bones[pbone.name].color.palette = settings.bone_color
             armature.pose.bones[pbone.name].color.palette = settings.pose_bone_color
             pbone.custom_shape = shape_obj
+            pbone.use_custom_shape_bone_size = settings.scale_bone_length_enable
             pbone.custom_shape_scale_xyz = (scale_x, scale_y, scale_z)
             pbone.custom_shape_translation = (settings.loc_x, settings.loc_y, settings.loc_z)
             pbone.custom_shape_rotation_euler = (math.radians(settings.rot_x), math.radians(settings.rot_y),math.radians(settings.rot_z))
@@ -329,24 +367,14 @@ class WRYC_OT_ConnectDeformArmature(bpy.types.Operator):
             else:
                 def_bone = tgt_arm.edit_bones.new(name=def_name)
 
-            src_dir = src_bone.tail_local - src_bone.head_local
-            length = src_dir.length
-            if length == 0:
-                continue
-
-            src_dir_normalized = src_dir.normalized()
-
-            tgt_head_world = tgt_obj.matrix_world @ tgt_bone.head_local
-            tgt_head_local = tgt_obj.matrix_world.inverted() @ tgt_head_world
-
-            def_bone.head = tgt_head_local
-            def_bone.tail = tgt_head_local + src_dir_normalized * length
+            def_bone.head = src_bone.head_local
+            def_bone.tail = src_bone.tail_local
+            def_bone.matrix = src_bone.matrix_local
 
             def_bone.use_deform = False
             def_bone.use_connect = False
 
             deform_col.assign(def_bone)
-
             def_bones.append(src_name)
 
         for src_bone in def_arm.bones:
@@ -375,16 +403,30 @@ class WRYC_OT_ConnectDeformArmature(bpy.types.Operator):
             if def_name not in tgt_obj.pose.bones:
                 continue
 
-            p_def = tgt_obj.pose.bones[def_name]
+            def_pb = tgt_obj.pose.bones[def_name]
 
-            if "DEFORM - CHILD_OF" in p_def.constraints:
-                continue
+            if def_pb:
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_LOCATION')
+                con.max_x = con.max_y = con.max_z = con.min_x = con.min_y = con.min_z = 0
+                con.use_max_x = con.use_max_y = con.use_max_z = con.use_min_x = con.use_min_y = con.use_min_z = True
+                con.owner_space = 'LOCAL_WITH_PARENT'
+                con.influence = 1.0
 
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_ROTATION')
+                con.max_x = con.max_y = con.max_z = con.min_x = con.min_y = con.min_z = 0
+                con.use_limit_x = con.use_limit_y = con.use_limit_z = True
+                con.owner_space = 'LOCAL_WITH_PARENT'
+                con.influence = 1.0
 
-            con = AddonFunctions.get_or_create_constraint(p_def, "DEFORM - ", "CHILD_OF")
-            con.target = tgt_obj
-            con.subtarget = tgt_name
-            AddonFunctions.apply_child_of_inverse(context, tgt_obj, p_def, con)
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_SCALE')
+                con.max_x = con.max_y = con.max_z = con.min_x = con.min_y = con.min_z = 1
+                con.use_max_x = con.use_max_y = con.use_max_z = con.use_min_x = con.use_min_y = con.use_min_z = True
+                con.owner_space = 'LOCAL_WITH_PARENT'
+                con.influence = 1.0
+
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", "CHILD_OF")
+                con.target = tgt_obj
+                con.subtarget = tgt_name
 
         bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -409,7 +451,7 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
         default='Z'
     )
     switch_angle: bpy.props.FloatProperty(name="Switch Angle",default=90)
-    def_collection_name: bpy.props.StringProperty(name="Collection Name",default="Deform Bones")
+    def_coll_name: bpy.props.StringProperty(name="Collection Name",default="Deform Bones")
 
     def invoke(self, context, event):
         if not AddonFunctions.check_pose_mode(context, self):
@@ -430,14 +472,14 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
             col = layout.column(align=True)
             split = col.split(factor=0.5)
             split.label(text="Deform Collection Name:")
-            split.prop(self, "def_collection_name", text="")
+            split.prop(self, "def_coll_name", text="")
         else:
             layout.label(text="Select an Armature", icon="ERROR")
 
     def execute(self, context):
         pref = AddonFunctions.get_preferences()
         obj = context.object
-        arm_data = obj.data
+        arm = obj.data
 
         selected_bones = AddonFunctions.get_selected_bones(context, self)
         if not selected_bones:
@@ -445,17 +487,17 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
 
         selected_names = {pb.name for pb in selected_bones}
 
-        if self.def_collection_name not in arm_data.collections:
-            def_collection = arm_data.collections.new(self.def_collection_name)
+        if self.def_coll_name not in arm.collections:
+            def_collection = arm.collections.new(self.def_coll_name)
         else:
-            def_collection = arm_data.collections[self.def_collection_name]
+            def_collection = arm.collections[self.def_coll_name]
 
         bpy.ops.object.mode_set(mode='EDIT')
-        edit_bones = arm_data.edit_bones
+        edit_bones = arm.edit_bones
 
         bone_map = {}
 
-        for orig_bone in arm_data.bones:
+        for orig_bone in arm.bones:
             if orig_bone.name not in selected_names:
                 continue
 
@@ -502,7 +544,7 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
             bone_map[orig_bone.name] = def_name
 
         for orig_name, def_name in bone_map.items():
-            orig_bone = arm_data.bones[orig_name]
+            orig_bone = arm.bones[orig_name]
             def_bone = edit_bones[def_name]
 
             if orig_bone.parent and orig_bone.parent.name in bone_map:
@@ -541,6 +583,183 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
                 bpy.ops.constraint.childof_set_inverse(constraint=con.name, owner='BONE')
 
         self.report({'INFO'}, f"Generated deform bones.")
+        return {'FINISHED'}
+
+class WRYC_OT_CreateMannyDeformBones(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_manny_deform_bones"
+    bl_label = "Generate UE5 Manny Deform Bones"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def_coll_name: bpy.props.StringProperty(default="Deform Bones")
+    def_body_coll_name:bpy.props.StringProperty(default="Deform(Body)")
+
+    def execute(self, context):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+        prefix = AddonFunctions.get_preferences().prefix.deform_prefix
+        obj = context.active_object
+        arm = obj.data
+
+        def_coll = AddonFunctions.get_or_create_collection(arm, self.def_coll_name)
+        def_body_coll = AddonFunctions.get_or_create_collection(arm, self.def_body_coll_name)
+
+        def_body_coll.parent = def_coll
+
+        spine_mapping = {'X': '-Z', 'Y': 'X', 'Z': '-Y'}
+        left_hand_right_leg_mapping = {'X': '-Y', 'Y': 'X', 'Z': 'Z'}
+        left_hand_wrist_mapping = {'X': 'Z', 'Y': 'X', 'Z': 'Y'}
+        right_hand_left_leg_mapping = {'X': '-Y', 'Y': '-X', 'Z': '-Z'}
+        right_hand_wrist_mapping = {'X': 'Z', 'Y': '-X', 'Z': '-Y'}
+        left_toe_mapping = {'X': 'Y', 'Y': 'X', 'Z': '-Z'}
+        right_toe_mapping = {'X': 'Y', 'Y': '-X', 'Z': 'Z'}
+
+        bone_configs = [
+            # Spine
+            ("root", "root", spine_mapping, 'head'),
+            ("pelvis", "pelvis", spine_mapping, 'head'),
+            ("spine_01", "spine_01", spine_mapping, 'head'),
+            ("spine_02", "spine_02", spine_mapping, 'head'),
+            ("spine_03", "spine_03", spine_mapping, 'head'),
+            ("spine_04", "spine_04", spine_mapping, 'head'),
+            ("spine_05", "spine_05", spine_mapping, 'head'),
+            ("neck_01", "neck_01", spine_mapping, 'head'),
+            ("neck_02", "neck_02", spine_mapping, 'head'),
+            ("head", "head", spine_mapping, 'head'),
+            # Left Arm
+            ("clavicle_l", "clavicle_l", left_hand_right_leg_mapping, 'head'),
+            ("upperarm_l", "upperarm_l", left_hand_right_leg_mapping, 'head'),
+            ("lowerarm_l", "lowerarm_l", left_hand_right_leg_mapping, 'head'),
+            ("upperarm_twist_01_l", "upperarm_twist_01_l", left_hand_wrist_mapping, 'tail'),
+            ("upperarm_twist_02_l", "upperarm_twist_02_l", left_hand_wrist_mapping, 'tail'),
+            ("lowerarm_twist_01_l", "lowerarm_twist_01_l", left_hand_wrist_mapping, 'tail'),
+            ("lowerarm_twist_02_l", "lowerarm_twist_02_l", left_hand_wrist_mapping, 'tail'),
+            # Left Hand
+            ("hand_l", "hand_l", left_hand_right_leg_mapping, 'head'),
+            ("thumb_01_l", "thumb_01_l", left_hand_right_leg_mapping, 'head'),
+            ("thumb_02_l", "thumb_02_l", left_hand_right_leg_mapping, 'head'),
+            ("thumb_03_l", "thumb_03_l", left_hand_right_leg_mapping, 'head'),
+            ("index_metacarpal_l", "index_metacarpal_l", left_hand_right_leg_mapping, 'head'),
+            ("index_01_l", "index_01_l", left_hand_right_leg_mapping, 'head'),
+            ("index_02_l", "index_02_l", left_hand_right_leg_mapping, 'head'),
+            ("index_03_l", "index_03_l", left_hand_right_leg_mapping, 'head'),
+            ("middle_metacarpal_l", "middle_metacarpal_l", left_hand_right_leg_mapping, 'head'),
+            ("middle_01_l", "middle_01_l", left_hand_right_leg_mapping, 'head'),
+            ("middle_02_l", "middle_02_l", left_hand_right_leg_mapping, 'head'),
+            ("middle_03_l", "middle_03_l", left_hand_right_leg_mapping, 'head'),
+            ("ring_metacarpal_l", "ring_metacarpal_l", left_hand_right_leg_mapping, 'head'),
+            ("ring_01_l", "ring_01_l", left_hand_right_leg_mapping, 'head'),
+            ("ring_02_l", "ring_01_l", left_hand_right_leg_mapping, 'head'),
+            ("ring_03_l", "ring_03_l", left_hand_right_leg_mapping, 'head'),
+            ("pinky_metacarpal_l", "pinky_metacarpal_l", left_hand_right_leg_mapping, 'head'),
+            ("pinky_01_l", "pinky_01_l", left_hand_right_leg_mapping, 'head'),
+            ("pinky_02_l", "pinky_02_l", left_hand_right_leg_mapping, 'head'),
+            ("pinky_03_l", "pinky_03_l", left_hand_right_leg_mapping, 'head'),
+            # Right Arm
+            ("clavicle_r", "clavicle_r", right_hand_left_leg_mapping, 'head'),
+            ("upperarm_r", "upperarm_r", right_hand_left_leg_mapping, 'head'),
+            ("lowerarm_r", "lowerarm_r", right_hand_left_leg_mapping, 'head'),
+            ("upperarm_twist_01_r", "upperarm_twist_01_r", right_hand_wrist_mapping, 'tail'),
+            ("upperarm_twist_02_r", "upperarm_twist_02_r", right_hand_wrist_mapping, 'tail'),
+            ("lowerarm_twist_01_r", "lowerarm_twist_01_r", right_hand_wrist_mapping, 'tail'),
+            ("lowerarm_twist_02_r", "lowerarm_twist_02_r", right_hand_wrist_mapping, 'tail'),
+            # Right Hand
+            ("hand_r", "hand_r", right_hand_left_leg_mapping, 'head'),
+            ("thumb_01_r", "thumb_01_r", right_hand_left_leg_mapping, 'head'),
+            ("thumb_02_r", "thumb_02_r", right_hand_left_leg_mapping, 'head'),
+            ("thumb_03_r", "thumb_03_r", right_hand_left_leg_mapping, 'head'),
+            ("index_metacarpal_r", "index_metacarpal_r", right_hand_left_leg_mapping, 'head'),
+            ("index_01_r", "index_01_r", right_hand_left_leg_mapping, 'head'),
+            ("index_02_r", "index_02_r", right_hand_left_leg_mapping, 'head'),
+            ("index_03_r", "index_03_r", right_hand_left_leg_mapping, 'head'),
+            ("middle_metacarpal_r", "middle_metacarpal_r", right_hand_left_leg_mapping, 'head'),
+            ("middle_01_r", "middle_01_r", right_hand_left_leg_mapping, 'head'),
+            ("middle_02_r", "middle_02_r", right_hand_left_leg_mapping, 'head'),
+            ("middle_03_r", "middle_03_r", right_hand_left_leg_mapping, 'head'),
+            ("ring_metacarpal_r", "ring_metacarpal_r", right_hand_left_leg_mapping, 'head'),
+            ("ring_01_r", "ring_01_r", right_hand_left_leg_mapping, 'head'),
+            ("ring_02_r", "ring_01_r", right_hand_left_leg_mapping, 'head'),
+            ("ring_03_r", "ring_03_r", right_hand_left_leg_mapping, 'head'),
+            ("pinky_metacarpal_r", "pinky_metacarpal_r", right_hand_left_leg_mapping, 'head'),
+            ("pinky_01_r", "pinky_01_r", right_hand_left_leg_mapping, 'head'),
+            ("pinky_02_r", "pinky_02_r", right_hand_left_leg_mapping, 'head'),
+            ("pinky_03_r", "pinky_03_r", right_hand_left_leg_mapping, 'head'),
+            # Left Leg
+            ("thigh_l", "thigh_l", right_hand_left_leg_mapping, 'head'),
+            ("calf_l", "calf_l", right_hand_left_leg_mapping, 'head'),
+            ("thigh_twist_01_l", "thigh_twist_01_l", right_hand_left_leg_mapping, 'tail'),
+            ("thigh_twist_02_l", "thigh_twist_02_l", right_hand_left_leg_mapping, 'tail'),
+            ("calf_twist_01_l", "calf_twist_01_l", right_hand_left_leg_mapping, 'tail'),
+            ("calf_twist_02_l", "calf_twist_02_l", right_hand_left_leg_mapping, 'tail'),
+            # Left Foot
+            ("foot_l", "calf_l", right_hand_left_leg_mapping, 'tail'),
+            ("ball_l", "ball_l", left_toe_mapping, 'head'),
+            # Right Leg
+            ("thigh_r", "thigh_r", left_hand_right_leg_mapping, 'head'),
+            ("calf_r", "calf_r", left_hand_right_leg_mapping, 'head'),
+            ("thigh_twist_01_r", "thigh_twist_01_r", left_hand_right_leg_mapping, 'tail'),
+            ("thigh_twist_02_r", "thigh_twist_02_r", left_hand_right_leg_mapping, 'tail'),
+            ("calf_twist_01_r", "calf_twist_01_r", left_hand_right_leg_mapping, 'tail'),
+            ("calf_twist_02_r", "calf_twist_02_r", left_hand_right_leg_mapping, 'tail'),
+            # Right Foot
+            ("foot_r", "calf_r", left_hand_right_leg_mapping, 'tail'),
+            ("ball_r", "ball_r", right_toe_mapping, 'head'),
+        ]
+
+        bone_map = {}
+
+        try:
+            bpy.ops.object.mode_set(mode='EDIT')
+            mirror_mode = arm.use_mirror_x
+            arm.use_mirror_x = False
+
+            for target_name, matrix_name, mapping, relation in bone_configs:
+                    if target_name not in obj.pose.bones or matrix_name not in obj.pose.bones:
+                        continue
+
+                    target_pb = obj.pose.bones[target_name]
+                    matrix_pb = obj.pose.bones[matrix_name]
+                    def_name = f"{prefix}{target_name}"
+                    parent_name = f"{prefix}{target_pb.parent.name}" if target_pb.parent else ""
+
+                    new_bone = AddonFunctions.create_deform_bone(obj, target_pb, matrix_pb, def_name, mapping, relation, parent_name)
+                    nb = arm.edit_bones.get(new_bone)
+                    def_body_coll.assign(nb)
+                    bone_map[target_name] = new_bone
+
+        finally:
+            arm.use_mirror_x = mirror_mode
+
+        bpy.ops.object.mode_set(mode='POSE')
+
+        for orig_name, def_name in bone_map.items():
+            def_pb = obj.pose.bones.get(def_name)
+
+            if def_pb:
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_LOCATION')
+                con.max_x = con.max_y = con.max_z = con.min_x = con.min_y = con.min_z = 0
+                con.use_max_x = con.use_max_y = con.use_max_z = con.use_min_x = con.use_min_y = con.use_min_z = True
+                con.owner_space = 'LOCAL_WITH_PARENT'
+                con.influence = 1.0
+
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_ROTATION')
+                con.max_x = con.max_y = con.max_z = con.min_x = con.min_y = con.min_z = 0
+                con.use_limit_x = con.use_limit_y = con.use_limit_z = True
+                con.owner_space = 'LOCAL_WITH_PARENT'
+                con.influence = 1.0
+
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_SCALE')
+                con.max_x = con.max_y = con.max_z = con.min_x = con.min_y = con.min_z = 1
+                con.use_max_x = con.use_max_y = con.use_max_z = con.use_min_x = con.use_min_y = con.use_min_z = True
+                con.owner_space = 'LOCAL_WITH_PARENT'
+                con.influence = 1.0
+
+                con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'CHILD_OF')
+                con.target = obj
+                con.subtarget = orig_name
+                obj.data.bones.active = obj.data.bones[def_name]
+                bpy.ops.constraint.childof_set_inverse(constraint=con.name, owner='BONE')
+
+        self.report({'INFO'}, "Generated UE5 Manny deform bones.")
         return {'FINISHED'}
 
 class WRYC_OT_SetInverseAllChildOf(bpy.types.Operator):
@@ -593,15 +812,15 @@ class WRYC_OT_RemoveConstrains(bpy.types.Operator):
         self.report({'INFO'}, "Pose mode is ON, Remove Selected Bones Constraints")
         return {'FINISHED'}
 
-class WRYC_OT_CreateFingerController(bpy.types.Operator):
-    bl_idname = "wryc.ot_create_finger_controller"
-    bl_label = "Finger"
-    bl_description = "Create finger controller"
+class WRYC_OT_CreateSpineController(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_spine_controller"
+    bl_label = "Spine"
+    bl_description = "Generate Spine Controller"
     bl_options = {'REGISTER', 'UNDO'}
 
-    root_bone: bpy.props.StringProperty(name="Root Bone")
-    target_bone: bpy.props.StringProperty(name="Target Bone")
-
+    head: bpy.props.StringProperty(name="Head Bone")
+    chest: bpy.props.StringProperty(name="Chest Bone")
+    pelvis: bpy.props.StringProperty(name="Pelvis Bone")
 
     def invoke(self, context, event):
         if not AddonFunctions.check_pose_mode(context, self):
@@ -611,58 +830,447 @@ class WRYC_OT_CreateFingerController(bpy.types.Operator):
     def draw(self, context):
         layout = self.layout
         obj = context.object
+
         if obj and obj.type == 'ARMATURE':
             layout.label(text="Basic Bone")
-            layout.prop_search(self, "root_bone", obj.data, "bones", text="Root Bone")
-
-            layout.label(text="Control Bone")
-            layout.prop_search(self, "target_bone", obj.data, "bones", text="TB Bone")
-
-            sub = layout.row()
-            sub.enabled = False
-            sub.label(text="If not select Control Bone, will generate new Control Bone")
-
-            row = layout.row()
-            row.enabled = bool(not self.target_bone)
-            row.prop(context.window_manager.bone_shapes_library, "finger_bone_shape", expand=False, text="Target Bone Shape")
+            layout.prop_search(self, "head", obj.data, "bones", text="Head")
+            layout.prop_search(self, "chest", obj.data, "bones", text="Chest")
+            layout.prop_search(self, "pelvis", obj.data, "bones", text="Pelvis")
         else:
             layout.label(text="Select an Armature", icon="ERROR")
 
     def execute(self, context):
-        pref = AddonFunctions.get_preferences()
         obj = context.object
+        pref = AddonFunctions.get_preferences()
 
-        if not self.root_bone:
-            self.report({'ERROR'}, "Please select the first bone in the finger chain")
+        if not self.head or not self.chest or not self.pelvis:
+            self.report({'ERROR'}, f"Please select bones")
             return {'CANCELLED'}
 
-        root_name = self.root_bone
+        head_pb = obj.pose.bones.get(self.head)
+        chest_pb = obj.pose.bones.get(self.chest)
+        pelvis_pb = obj.pose.bones.get(self.pelvis)
 
-        raw_target_name = self.target_bone.strip() if self.target_bone else f"{pref.target_prefix} + {root_name}"
-        target_name = AddonFunctions.ensure_target(
+        if not head_pb or not chest_pb or not pelvis_pb:
+            self.report({'ERROR'}, f"Bone not found")
+            return {'CANCELLED'}
+
+        neck_pb = chest_pb.children[0]
+
+        #Collect chain: pelvis -> chain
+        pre_neck_chain = []
+        pb = neck_pb
+        while pb:
+            pre_neck_chain.append(pb)
+            if pb.name == pelvis_pb.name:
+                break
+            pb = pb.parent
+        pre_neck_chain.reverse()
+
+        spline_chain_count = len(pre_neck_chain)
+
+        full_chain = []
+        pb = head_pb
+        while pb:
+            full_chain.append(pb)
+            if pb.name == self.pelvis:
+                break
+            pb = pb.parent
+        full_chain.reverse()
+
+        full_chain_names = [b.name for b in full_chain]
+
+        # Generate Pelvis Control Bone
+        control_pelvis = AddonFunctions.ensure_target(
             obj,
-            root_name,
-            raw_target_name,
-            context.window_manager.bone_shapes_library.finger_bone_shape,
-            None,
+            self.pelvis,
+            f"{pref.prefix.control_prefix}{self.pelvis}",
+            "pelvis_control_shape",
+            "",
             False,
+            mode="DEFAULT"
         )
 
-        chain = AddonFunctions.collect_bone_chain(obj.pose.bones[root_name])
+        #Generate Target Bones
+        unit = chest_pb.length / 0.12
+        offset = obj.matrix_world.inverted().to_3x3() @ (mathutils.Vector((0, unit * 0.3, 0)))
 
-        for pb in chain:
-            con = AddonFunctions.get_or_create_constraint(
-                pb,
-                "FINGER - ",
-                "COPY_ROTATION"
+        target_pelvis = AddonFunctions.ensure_target(
+            obj,
+            self.pelvis,
+            f"{pref.prefix.target_prefix}{self.pelvis}",
+            "target_shape",
+            parent_bone="",
+            use_connect=False,
+            position=offset,
+            length=unit * 0.05,
+            mode="CHAIN_TARGET"
+        )
+        target_chest = AddonFunctions.ensure_target(
+            obj,
+            self.chest,
+            f"{pref.prefix.target_prefix}{self.chest}",
+            "target_shape",
+            parent_bone="",
+            use_connect=False,
+            position=offset,
+            length=unit * 0.05,
+            mode="CHAIN_TARGET"
+        )
+        target_head = AddonFunctions.ensure_target(
+            obj,
+            self.head,
+            f"{pref.prefix.target_prefix}{self.head}",
+            "target_shape",
+            parent_bone="",
+            use_connect=False,
+            position=offset,
+            length=unit * 0.05,
+            mode="CHAIN_TARGET"
+        )
+
+        #Generate Gizmo Bones
+        prev_gizmo_name = None
+        for bone_name in full_chain_names:
+            gizmo_name = f"{pref.prefix.gizmo_prefix}{bone_name}"
+            AddonFunctions.ensure_target(
+                obj,
+                bone_name,
+                gizmo_name,
+                "gizmo_shape",
+                parent_bone=prev_gizmo_name if prev_gizmo_name else "",
+                use_connect=prev_gizmo_name is not None,
+                position=offset,
+                mode="CHAIN_GIZMO"
             )
+            gizmo_bone = obj.pose.bones.get(gizmo_name)
+            gizmo_bone.bone.inherit_scale = 'ALIGNED'
+            prev_gizmo_name = gizmo_name
+
+        #Generate Curve
+        curve_name = f"{obj.name} Spine Curve"
+        if curve_name in bpy.data.objects:
+            bpy.data.objects.remove(bpy.data.objects[curve_name], do_unlink=True)
+
+        curve_data = bpy.data.curves.new(curve_name, type='CURVE')
+        curve_data.dimensions = '3D'
+        spline = curve_data.splines.new('NURBS')
+        spline.points.add(2)
+        spline.use_endpoint_u = True
+
+        pelvis_world = obj.matrix_world @ target_pelvis.head
+        chest_world = obj.matrix_world @ target_chest.head
+        head_world = obj.matrix_world @ target_head.head
+
+        for i, (pt, pos) in enumerate(zip(spline.points, [pelvis_world, chest_world, head_world])):
+            pt.co = (*pos, 1.0)
+            pt.weight = 1.0
+
+        curve_obj = bpy.data.objects.new(curve_name, curve_data)
+        if obj.users_collection:
+            target_collection = obj.users_collection[0]
+        else:
+            target_collection = context.scene.collection
+        target_collection.objects.link(curve_obj)
+        curve_obj.parent = obj
+        context.view_layer.update()
+
+        hook_targets = [
+            (target_pelvis.name, 0),
+            (target_chest.name, 1),
+            (target_head.name, 2),
+        ]
+
+        bpy.context.view_layer.objects.active = curve_obj
+        curve_obj.select_set(True)
+
+        for bone_name, index in hook_targets:
+            mod = curve_obj.modifiers.new(name=f"{bone_name} - Hook", type='HOOK')
+            mod.object = obj
+            mod.subtarget = bone_name
+            mod.vertex_indices_set([index])
+
+        curve_obj.parent = obj
+
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.mode_set(mode='POSE')
+
+        #Constraints
+        con = AddonFunctions.get_or_create_constraint(control_pelvis, "TARGET - ", 'COPY_LOCATION')
+        con.target = obj
+        con.subtarget = target_pelvis.name
+        con.use_x = con.use_y = con.use_z = True
+        con.use_offset = True
+        con.target_space = 'LOCAL'
+        con.owner_space = 'LOCAL'
+        con.influence = 1
+
+        con = AddonFunctions.get_or_create_constraint(control_pelvis, "GIZMO - ", 'COPY_ROTATION')
+        con.target = obj
+        con.subtarget = f"{pref.prefix.gizmo_prefix}{pelvis_pb.name}"
+        con.use_x = con.use_y = con.use_z = True
+        con.target_space = 'LOCAL'
+        con.owner_space = 'LOCAL'
+        con.mix_mode = 'BEFORE'
+        con.influence = 1
+
+        con = AddonFunctions.get_or_create_constraint(pelvis_pb, "CONTROL - ", 'COPY_LOCATION')
+        con.target = obj
+        con.subtarget = control_pelvis.name
+        con.use_x = con.use_y = con.use_z = True
+        con.use_offset = False
+        con.target_space = 'LOCAL'
+        con.owner_space = 'LOCAL'
+        con.influence = 1
+
+        con = AddonFunctions.get_or_create_constraint(pelvis_pb, "CONTROL - ", 'COPY_ROTATION')
+        con.target = obj
+        con.subtarget = control_pelvis.name
+        con.use_x = con.use_y = con.use_z = True
+        con.target_space = 'LOCAL'
+        con.owner_space = 'LOCAL'
+        con.mix_mode = 'REPLACE'
+        con.influence = 1
+
+        for pb in full_chain[1:]:
+            con = AddonFunctions.get_or_create_constraint(pb, "GIZMO - ", 'COPY_ROTATION')
             con.target = obj
-            con.subtarget = target_name
+            con.subtarget = f"{pref.prefix.gizmo_prefix}{pb.name}"
+            con.use_x = con.use_y = con.use_z = True
             con.target_space = 'LOCAL'
             con.owner_space = 'LOCAL'
             con.mix_mode = 'BEFORE'
+            con.influence = 0.5
 
-        self.report({'INFO'}, f"Generate Constraint For Finger")
+        gizmo_neck = obj.pose.bones.get(f"{pref.prefix.gizmo_prefix}{neck_pb.name}")
+        con = AddonFunctions.get_or_create_constraint(gizmo_neck, "", 'SPLINE_IK')
+        con.target = curve_obj
+        con.chain_count = spline_chain_count
+        con.use_curve_radius = True
+        con.y_scale_mode = 'FIT_CURVE'
+
+        self.report({'INFO'}, f"Generated Controller for SPINE")
+        return {'FINISHED'}
+
+class WRYC_OT_CreateHeadController(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_head_controller"
+    bl_label = "Head"
+    bl_description = "Generate Head Controller"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    head: bpy.props.StringProperty(name="Head Bone")
+    chest: bpy.props.StringProperty(name="Chest Bone")
+
+    def invoke(self, context, event):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+
+        if obj and obj.type == 'ARMATURE':
+            layout.label(text="Basic Bone")
+            layout.prop_search(self, "head", obj.data, "bones", text="Head")
+            layout.prop_search(self, "chest", obj.data, "bones", text="Chest")
+        else:
+            layout.label(text="Select an Armature", icon="ERROR")
+            
+    def execute(self, context):
+        obj = context.object
+        pref = AddonFunctions.get_preferences()
+
+        if not self.head or not self.chest:
+            self.report({'ERROR'}, f"Please Select Bones")
+            return {'CANCELLED'}
+
+        head_pb = obj.pose.bones.get(self.head)
+        chest_pb = obj.pose.bones.get(self.chest)
+
+        if not head_pb or not chest_pb:
+            self.report({'ERROR'}, f"Bone not found")
+            return {'CANCELLED'}
+
+        chain = []
+        pb = head_pb
+        while pb:
+            chain.append(pb)
+            if pb.name == chest_pb.name:
+                break
+            pb = pb.parent
+        chain.reverse()
+
+        chain_length = len(chain)
+        chain_names = [b.name for b in chain]
+
+        gt_prefix = f"{pref.prefix.gizmo_prefix}{pref.prefix.track_prefix}"
+        mt_prefix = f"{pref.prefix.mechanic_prefix}{pref.prefix.track_prefix}"
+
+        unit = chest_pb.child.length/0.05
+
+        offset_head = AddonFunctions.ensure_target(
+            obj,
+            head_pb,
+            f"{pref.prefix.offset_prefix}{pref.prefix.track_prefix}{head_pb.name}",
+            'offset_head_shape',
+            chest_pb.child.name,
+            False,
+            length=unit * 0.3,
+            mode='HEAD_TRACK',
+        )
+
+        for i, bone_name in enumerate(chain_names):
+            gt_name = f"{gt_prefix}{bone_name}"
+            gt_pb = AddonFunctions.ensure_target(
+                obj,
+                bone_name,
+                gt_name,
+                'gizmo_shape',
+                chain_names[i - 1] if i > 0 else f"{chest_pb.parent.name}",
+                False,
+                mode='DEFAULT'
+            )
+            if gt_pb:
+                gt_pb.bone.inherit_scale = 'ALIGNED'
+
+        prev_mt_name = chain_names[0]
+        for bone_name in chain_names:
+            mt_name = f"{mt_prefix}{bone_name}"
+            AddonFunctions.ensure_target(
+                obj,
+                bone_name,
+                mt_name,
+                'mechanic_shape',
+                parent_bone=offset_head.name if bone_name == head_pb.name else chest_pb.parent.name if bone_name == chest_pb.name else prev_mt_name,
+                use_connect=False,
+                mode='DEFAULT'
+            )
+            prev_mt_name = mt_name
+
+        control_head = AddonFunctions.ensure_target(
+            obj,
+            head_pb,
+            f"{pref.prefix.control_prefix}{pref.prefix.track_prefix}{head_pb.name}",
+            'head_control_shape',
+            f"{pref.prefix.mechanic_prefix}{pref.prefix.track_prefix}{head_pb.parent.name}",
+            False,
+            length=unit * 0.3,
+            mode='HEAD_TRACK',
+        )
+        target_head = AddonFunctions.ensure_target(
+            obj,
+            head_pb,
+            f"{pref.prefix.target_prefix}{pref.prefix.track_prefix}{head_pb.name}",
+            'target_shape',
+            "",
+            length=unit * 0.1,
+            mode='HEAD_TARGET',
+            ref_name=control_head.name
+        )
+
+        bpy.ops.object.mode_set(mode='POSE')
+
+        #Constraints
+        con = AddonFunctions.get_or_create_constraint(offset_head, 'TRACK - ', 'IK')
+        con.target = obj
+        con.subtarget = target_head.name
+        con.chain_count = 1
+        con.use_tail = True
+        con.use_stretch = False
+        con.use_location = True
+        con.use_rotation = False
+        con.weight = 1.0
+        con.influence = 1.0
+
+        con = AddonFunctions.get_or_create_constraint(offset_head, 'TRACK - ', 'COPY_ROTATION')
+        con.target = obj
+        con.subtarget = control_head.name
+        con.use_x = con.use_y = con.use_z = True
+        con.target_space = 'LOCAL'
+        con.owner_space = 'LOCAL'
+        con.mix_mode = 'AFTER'
+        con.influence = 1.0
+
+        con = AddonFunctions.get_or_create_constraint(control_head, 'TRACK - ', 'IK')
+        con.target = obj
+        con.subtarget = target_head.name
+        con.chain_count = chain_length + 1
+        con.use_tail = True
+        con.use_stretch = True
+        con.use_location = True
+        con.use_rotation = False
+        con.weight = 1.0
+        con.influence = 1.0
+
+        con = AddonFunctions.get_or_create_constraint(control_head, 'LOCK X - ', 'LOCKED_TRACK')
+        con.target = obj
+        con.subtarget = target_head.name
+        con.track_axis = 'TRACK_Y'
+        con.lock_axis = 'LOCK_X'
+        con.influence = 0.5
+
+        con = AddonFunctions.get_or_create_constraint(control_head, 'LOCK Z - ', 'LOCKED_TRACK')
+        con.target = obj
+        con.subtarget = target_head.name
+        con.track_axis = 'TRACK_Y'
+        con.lock_axis = 'LOCK_Z'
+        con.influence = 0.5
+
+
+        gt_bones = [obj.pose.bones.get(f"{gt_prefix}{bone_name}") for bone_name in chain_names]
+        mt_bones = [obj.pose.bones.get(f"{mt_prefix}{bone_name}") for bone_name in chain_names]
+
+        for i in range(chain_length):
+            bone = chain[i]
+            gt_bone = gt_bones[i]
+            mt_bone = mt_bones[i]
+
+            is_head = (i == chain_length - 1)
+
+            con = AddonFunctions.get_or_create_constraint(gt_bone, 'TRACK - ', 'IK')
+            con.target = obj
+            if is_head:
+                con.subtarget = mt_bone.name
+                con.use_location = False
+                con.use_rotation = True
+            else:
+                next_mt_bone = mt_bones[i + 1]
+                con.subtarget = control_head.name if i == (chain_length - 2) else next_mt_bone.name
+                con.use_location = True
+                con.use_rotation = False
+
+            con.chain_count = 1
+            con.use_tail = True
+            con.use_stretch = False
+            con.weight = 1.0
+            con.orient_weight = 1.0
+            con.influence = 1.0
+
+            con = AddonFunctions.get_or_create_constraint(gt_bone, 'TRACK - ', 'COPY_ROTATION')
+            con.target = obj
+            con.subtarget = mt_bone.name
+            con.use_x = con.use_z = False
+            con.use_y = True
+            con.target_space = 'LOCAL'
+            con.owner_space = 'LOCAL'
+            con.mix_mode = 'AFTER'
+            con.influence = 1.0
+
+            con = AddonFunctions.get_or_create_constraint(bone, 'TRACK - ', 'COPY_ROTATION')
+            con.target = obj
+            con.subtarget = gt_bone.name
+            con.use_x = con.use_y = con.use_z = True
+            con.target_space = 'LOCAL'
+            con.owner_space = 'LOCAL'
+            con.mix_mode = 'AFTER'
+            if is_head:
+                con.influence = 1.0
+            else:
+                con.influence = 0.5
+
+        self.report({'INFO'}, f"Generated Controller for Head")
         return {'FINISHED'}
 
 class WRYC_OT_CreateArmController(bpy.types.Operator):
@@ -673,21 +1281,6 @@ class WRYC_OT_CreateArmController(bpy.types.Operator):
 
     hand: bpy.props.StringProperty(name="Hand Bone")
     arm_length: bpy.props.IntProperty(name="Arm Length", default=2, min=2)
-
-    target_elbow: bpy.props.StringProperty(name="TB Elbow")
-    target_wrist: bpy.props.StringProperty(name="TB Wrist")
-    pole_direction: bpy.props.EnumProperty(
-        name="Pole Direction",
-        items=[
-            ("X+", "+X", "Positive X axis"),
-            ("X-", "-X", "Negative X axis"),
-            ("Y+", "+Y", "Positive Y axis"),
-            ("Y-", "-Y", "Negative Y axis"),
-            ("Z+", "+Z", "Positive Z axis"),
-            ("Z-", "-Z", "Negative Z axis")
-        ],
-        default="X+"
-    )
 
     def invoke(self, context, event):
         if not AddonFunctions.check_pose_mode(context, self):
@@ -702,24 +1295,6 @@ class WRYC_OT_CreateArmController(bpy.types.Operator):
             layout.label(text="Basic Bone")
             layout.prop_search(self, "hand", obj.data, "bones", text="Hand")
             layout.prop(self, "arm_length")
-
-            layout.label(text="Control Bone")
-            layout.prop_search(self, "target_elbow", obj.data, "bones", text="Elbow")
-            layout.prop_search(self, "target_wrist", obj.data, "bones", text="Wrist")
-
-            sub = layout.row()
-            sub.enabled = False
-            sub.label(text="If not select Control Bone, will generate new Control Bone")
-
-            layout.prop(self, "pole_direction")
-
-            row = layout.row()
-            row.enabled = bool(not self.target_elbow)
-            layout.prop(context.window_manager.bone_shapes_library, "arm_elbow_shape", expand=False, text="Elbow Shape")
-
-            row = layout.row()
-            row.enabled = bool(not self.target_wrist)
-            layout.prop(context.window_manager.bone_shapes_library, "arm_hand_shape", expand=False, text="Hand Shape")
         else:
             layout.label(text="Select an Armature", icon="ERROR")
 
@@ -754,42 +1329,37 @@ class WRYC_OT_CreateArmController(bpy.types.Operator):
         lower_name = lower_pb.name
         upper_name = upper_pb.name
 
-        raw_target_wrist = self.target_wrist.strip() if self.target_wrist else f"{pref.target_prefix} +{hand_name}"
+        unit = upper_pb.length/0.28
+
+        bpy.ops.object.mode_set(mode='EDIT')
+
         target_wrist = AddonFunctions.ensure_target(
             obj,
             hand_name,
-            raw_target_wrist,
-            context.window_manager.bone_shapes_library.arm_hand_shape,
+            f"{pref.prefix.target_prefix}{hand_name}",
+            "hand_target_shape",
             "",
             False,
         )
+        pole_pos = AddonFunctions.compute_pole_position(
+            obj,
+            upper_name,
+            lower_name,
+            hand_name,
+        )
+        target_elbow = AddonFunctions.ensure_target(
+            obj,
+            upper_name,
+            f"{pref.prefix.target_prefix}{upper_name}",
+            "target_shape",
+            parent_bone="",
+            position=pole_pos,
+            length=unit * 0.1,
+            mode="POLE_TARGET",
+        )
 
-        if not self.target_elbow.strip():
-            pole_pos = AddonFunctions.compute_pole_position(
-                obj,
-                upper_name,
-                lower_name,
-                hand_name,
-                direction=self.pole_direction,
-            )
-            target_elbow = AddonFunctions.ensure_target(
-                obj,
-                upper_name,
-                f"{pref.target_prefix} + {upper_name}",
-                context.window_manager.bone_shapes_library.arm_elbow_shape,
-                parent_name="",
-                position=pole_pos,
-            )
-        else:
-            raw_target_elbow = self.target_elbow.strip()
-            target_elbow = AddonFunctions.ensure_target(
-                obj,
-                upper_name,
-                raw_target_elbow,
-                parent_name="",
-                use_connect=False,
-            )
-        pole_pos = obj.matrix_world @ target_elbow.head
+        bpy.ops.object.mode_set(mode='POSE')
+
         pole_angle = AddonFunctions.compute_pole_angle(
             obj,
             upper_name,
@@ -797,18 +1367,12 @@ class WRYC_OT_CreateArmController(bpy.types.Operator):
             pole_pos,
         )
 
-        wrist_name = target_wrist.name
-        elbow_name = target_elbow.name
-
         con = AddonFunctions.get_or_create_constraint(lower_pb, "ARM - ", 'IK')
         con.target = obj
-        con.subtarget = wrist_name
+        con.subtarget = target_wrist.name
         con.pole_target = obj
-        con.pole_subtarget = elbow_name
-        if not self.target_elbow.strip():
-            con.pole_angle = pole_angle
-        else:
-            con.pole_angle = 0.0
+        con.pole_subtarget = target_elbow.name
+        con.pole_angle = pole_angle
         con.chain_count = self.arm_length
         con.use_tail = True
         con.use_stretch = False
@@ -817,7 +1381,7 @@ class WRYC_OT_CreateArmController(bpy.types.Operator):
 
         con = AddonFunctions.get_or_create_constraint(hand_pb, "TARGET - ", 'COPY_ROTATION')
         con.target = obj
-        con.subtarget = wrist_name
+        con.subtarget = target_wrist.name
         con.use_x = con.use_y = con.use_z = True
         con.target_space = 'WORLD'
         con.owner_space = 'WORLD'
@@ -827,31 +1391,81 @@ class WRYC_OT_CreateArmController(bpy.types.Operator):
         self.report({'INFO'}, f"Generated Controller for Arm")
         return {'FINISHED'}
 
+class WRYC_OT_CreateFingerController(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_finger_controller"
+    bl_label = "Finger"
+    bl_description = "Create finger controller"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    root_bone: bpy.props.StringProperty(name="Root Bone")
+
+    def invoke(self, context, event):
+        if not AddonFunctions.check_pose_mode(context, self):
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+        if obj and obj.type == 'ARMATURE':
+            layout.label(text="Basic Bone")
+            layout.prop_search(self, "root_bone", obj.data, "bones", text="Root Bone")
+
+        else:
+            layout.label(text="Select an Armature", icon="ERROR")
+
+    def execute(self, context):
+        pref = AddonFunctions.get_preferences()
+        obj = context.object
+
+        if not self.root_bone:
+            self.report({'ERROR'}, "Please select the first bone in the finger chain")
+            return {'CANCELLED'}
+
+        root_name = self.root_bone
+
+        bpy.ops.object.mode_set(mode='EDIT')
+
+        raw_target_name = self.target_bone.strip() if self.target_bone else f"{pref.prefix.target_prefix}{root_name}"
+        target = AddonFunctions.ensure_target(
+            obj,
+            root_name,
+            raw_target_name,
+            "finger_target_shape",
+            None,
+            False,
+        )
+
+        bpy.ops.object.mode_set(mode='POSE')
+
+        chain = AddonFunctions.collect_bone_chain(obj.pose.bones[root_name])
+
+        for pb in chain:
+            con = AddonFunctions.get_or_create_constraint(
+                pb,
+                "FINGER - ",
+                "COPY_ROTATION"
+            )
+            con.target = obj
+            con.subtarget = target.name
+            con.target_space = 'LOCAL'
+            con.owner_space = 'LOCAL'
+            con.mix_mode = 'BEFORE'
+
+        self.report({'INFO'}, f"Generate Constraint For Finger")
+        return {'FINISHED'}
+
 class WRYC_OT_CreateLegController(bpy.types.Operator):
     bl_idname = "wryc.ot_create_leg_controller"
     bl_label = "Leg"
     bl_description = "Generate Leg Controller"
     bl_options = {'REGISTER', 'UNDO'}
 
+    is_create_toe: bpy.props.BoolProperty(name="Is Create Toe" ,default=True)
+
     foot: bpy.props.StringProperty(name="Foot Bone")
+    toe: bpy.props.StringProperty(name="Toe Bone")
     leg_length: bpy.props.IntProperty(name="Leg Length", default=2, min=2)
-
-    target_knee: bpy.props.StringProperty(name="TB Knee")
-    target_ankle: bpy.props.StringProperty(name="GB Ankle")
-    offset_ankle: bpy.props.StringProperty(name="OB Ankle")
-
-    pole_direction: bpy.props.EnumProperty(
-        name="Pole Direction",
-        items=[
-            ("X+", "+X", "Positive X axis"),
-            ("X-", "-X", "Negative X axis"),
-            ("Y+", "+Y", "Positive Y axis"),
-            ("Y-", "-Y", "Negative Y axis"),
-            ("Z+", "+Z", "Positive Z axis"),
-            ("Z-", "-Z", "Negative Z axis")
-        ],
-        default="X+"
-    )
 
     def invoke(self, context, event):
         if not AddonFunctions.check_pose_mode(context, self):
@@ -863,32 +1477,12 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
         obj = context.object
 
         if obj and obj.type == 'ARMATURE':
+            layout.prop(self, "is_create_toe")
             layout.label(text="Basic Bone")
             layout.prop_search(self, "foot", obj.data, "bones", text="Foot")
+            if self.is_create_toe:
+                layout.prop_search(self, "toe", obj.data, "bones", text="Toe")
             layout.prop(self, "leg_length")
-
-            layout.label(text="Control Bone")
-            layout.prop_search(self, "target_knee", obj.data, "bones", text="Knee")
-            layout.prop_search(self, "target_ankle", obj.data, "bones", text="Ankle")
-            layout.prop_search(self, "offset_ankle", obj.data, "bones", text="Offset Ankle")
-
-            sub = layout.row()
-            sub.enabled = False
-            sub.label(text="If not select Control Bone, will generate new Control Bone")
-
-            layout.prop(self, "pole_direction")
-
-            row = layout.row()
-            row.enabled = bool(not self.target_knee)
-            layout.prop(context.window_manager.bone_shapes_library, "leg_knee_shape", expand=False, text="Knee Shape")
-
-            row = layout.row()
-            row.enabled = bool(not self.target_ankle)
-            layout.prop(context.window_manager.bone_shapes_library, "leg_ankle_shape", expand=False, text="Ankle Shape")
-
-            row = layout.row()
-            row.enabled = bool(not self.offset_ankle)
-            layout.prop(context.window_manager.bone_shapes_library, "leg_offset_shape", expand=False, text="Ankle Offset Shape")
         else:
             layout.label(text="Select an Armature", icon="ERROR")
 
@@ -900,10 +1494,15 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
             self.report({'ERROR'}, f"Please select the foot bone")
             return {'CANCELLED'}
 
+        if self.is_create_toe:
+            if not self.toe:
+                self.report({'ERROR'}, f"Please select the toe bone")
+                return {'CANCELLED'}
+
         chain = []
         pb = obj.pose.bones.get(self.foot)
         if not pb:
-            self.report({'ERROR'}, f"Hand Bone {self.foot} not found")
+            self.report({'ERROR'}, f"Foot Bone {self.foot} not found")
             return {'CANCELLED'}
 
         chain.append(pb)
@@ -923,71 +1522,123 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
         calf_name = calf_pb.name
         thigh_name = thigh_pb.name
 
-        raw_offset_ankle = self.offset_ankle.strip() if self.offset_ankle else f"{pref.offset_prefix} + {foot_name}"
-        offset_ankle = AddonFunctions.ensure_foot_ob_bone(
-            obj,
-            calf_name,
-            raw_offset_ankle,
-            context.window_manager.bone_shapes_library.leg_offset_shape,
-        )
-        offset_name = offset_ankle.name
+        unit = thigh_pb.length/0.4
 
-        raw_target_ankle = self.target_ankle.strip() if self.target_ankle else f"{pref.gizmo_prefix} + {foot_name}"
-        target_ankle = AddonFunctions.ensure_target(
-            obj,
-            offset_ankle,
-            raw_target_ankle,
-            context.window_manager.bone_shapes_library.leg_ankle_shape,
-            "",
-            False,
-        )
-        ankle_name = target_ankle.name
+        if self.is_create_toe:
+            toe_name = self.toe
+            toe = obj.pose.bones.get(toe_name)
 
-        if not self.target_knee.strip():
-            pole_pos = AddonFunctions.compute_pole_position(
-                obj,
-                thigh_name,
-                calf_name,
-                foot_name,
-                direction=self.pole_direction,
-            )
-            target_knee = AddonFunctions.ensure_target(
-                obj,
-                thigh_name,
-                f"{pref.target_prefix} + {thigh_name}",
-                parent_name="",
-                position=pole_pos,
-            )
-        else:
-            raw_target_knee = self.target_knee.strip()
-            target_knee = AddonFunctions.ensure_target(
-                obj,
-                thigh_name,
-                raw_target_knee,
-                context.window_manager.bone_shapes_library.arm_knee_shape,
-                "",
-                use_connect=False,
-            )
-        knee_name = target_knee.name
+        root_name = ""
+        for b in obj.pose.bones:
+            if "root" in b.name:
+                root_name = b.name
+                break
 
-
-        pole_pos = obj.matrix_world @ target_knee.head
-        pole_angle = AddonFunctions.compute_pole_angle(
+        pole_pos = AddonFunctions.compute_pole_position(
             obj,
             thigh_name,
             calf_name,
+            foot_name,
+        )
+        target_knee = AddonFunctions.ensure_target(
+            obj,
+            thigh_name,
+            f"{pref.prefix.target_prefix}{thigh_name}",
+            "target_shape",
+            parent_bone="",
+            position=pole_pos,
+            mode="POLE_TARGET",
+        )
+        offset_ankle = AddonFunctions.ensure_target(
+            obj,
+            calf_name,
+            f"{pref.prefix.offset_prefix}{foot_name}",
+            "offset_foot_shape",
+            calf_name,
+            True,
+            mode="FOOT_TO_FLOOR",
+        )
+
+        target_foot = AddonFunctions.ensure_target(
+            obj,
+            offset_ankle,
+            f"{pref.prefix.target_prefix}{foot_name}",
+            "foot_target_shape",
+            "",
+            False,
+            length=unit * 0.1,
+            mode="FOOT_UNDER_FLOOR",
+        )
+
+        if self.is_create_toe:
+            roll_toe = AddonFunctions.ensure_target(
+                obj,
+                toe_name,
+                f"{pref.prefix.gizmo_prefix}{pref.prefix.roll_prefix}{toe_name}",
+                "gizmo_roll_shape",
+                target_foot.name,
+                False,
+                length=unit * 0.1,
+                mode="BALL_ROLL"
+            )
+
+            roll_foot = AddonFunctions.ensure_target(
+                obj,
+                offset_ankle,
+                f"{pref.prefix.gizmo_prefix}{pref.prefix.roll_prefix}{foot_name}",
+                "gizmo_roll_shape",
+                roll_toe.name,
+                False,
+                length=unit * 0.1,
+                mode="FOOT_ROLL",
+                ref_name = toe_name
+            )
+
+            roll_control = AddonFunctions.ensure_target(
+                obj,
+                calf_name,
+                f"{pref.prefix.control_prefix}{foot_name}",
+                "foot_control_shape",
+                target_foot.name,
+                False,
+                length=unit * 0.2,
+                mode="FOOT_CONTROL",
+                ref_name=roll_toe.name
+            )
+
+            toe_control = AddonFunctions.ensure_target(
+                obj,
+                toe_name,
+                f"{pref.prefix.control_prefix}{toe_name}",
+                "ball_control_shape",
+                foot_name,
+                False,
+                mode="DEFAULT",
+            )
+
+        gizmo_ankle = AddonFunctions.ensure_target(
+            obj,
+            calf_name,
+            f"{pref.prefix.gizmo_prefix}{foot_name}",
+            "gizmo_shape",
+            parent_bone = roll_foot.name if self.is_create_toe else "",
+            use_connect= False,
+            mode="FOOT_TO_FLOOR"
+        )
+
+        pole_angle = AddonFunctions.compute_pole_angle(
+            obj,
+            thigh_name,
+            foot_name,
             pole_pos,
         )
 
         con = AddonFunctions.get_or_create_constraint(calf_pb, "LEG - ", 'IK')
         con.target = obj
-        con.subtarget = ankle_name
+        con.subtarget = gizmo_ankle.name
         con.pole_target = obj
-        con.pole_subtarget = knee_name
-        if not self.target_knee.strip():
-            con.pole_angle = pole_angle
-        else:
-            con.pole_angle = 0.0
+        con.pole_subtarget = target_knee.name
+        con.pole_angle = pole_angle
         con.chain_count = self.leg_length
         con.use_tail = True
         con.use_stretch = False
@@ -996,7 +1647,7 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
 
         con = AddonFunctions.get_or_create_constraint(foot_pb, "OFFSET - ", 'COPY_TRANSFORMS')
         con.target = obj
-        con.subtarget = offset_name
+        con.subtarget = offset_ankle.name
         con.target_space = 'LOCAL_OWNER_ORIENT'
         con.owner_space = 'LOCAL_WITH_PARENT'
         con.mix_mode = 'AFTER_FULL'
@@ -1004,73 +1655,215 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
 
         con = AddonFunctions.get_or_create_constraint(offset_ankle, "TARGET - ", 'COPY_ROTATION')
         con.target = obj
-        con.subtarget = ankle_name
+        con.subtarget = gizmo_ankle.name
         con.use_x = con.use_y = con.use_z = True
         con.target_space = 'WORLD'
         con.owner_space = 'WORLD'
         con.mix_mode = 'REPLACE'
         con.influence = 1.0
 
+        con = AddonFunctions.get_or_create_constraint(target_foot, "", 'FLOOR')
+        con.target = obj
+        con.subtarget = root_name
+        con.floor_location = 'FLOOR_Z'
+        con.target_space = 'WORLD'
+        con.owner_space = 'WORLD'
+
+        if self.is_create_toe:
+            roll_axis, axis_is_positive = AddonFunctions.detect_roll_axis(obj, toe_name, foot_name)
+
+            is_right_side = foot_pb.head.x < 0
+            if is_right_side == axis_is_positive:
+                toe_min, toe_max = math.radians(-45), math.radians(0)
+                foot_min, foot_max = math.radians(0), math.radians(45)
+            else:
+                toe_min, toe_max = math.radians(0), math.radians(45)
+                foot_min, foot_max = math.radians(-45), math.radians(0)
+
+            con = AddonFunctions.get_or_create_constraint(roll_toe, "ROLL - ", 'COPY_ROTATION')
+            con.target = obj
+            con.subtarget = roll_control.name
+            con.use_x = con.use_y = con.use_z = True
+            con.target_space = 'LOCAL'
+            con.owner_space = 'LOCAL'
+            con.mix_mode = 'REPLACE'
+            con.influence = 1.0
+
+            con = AddonFunctions.get_or_create_constraint(roll_toe, "ROLL - ", 'LIMIT_ROTATION')
+            con.use_limit_x = con.use_limit_y = con.use_limit_z = True
+            setattr(con, f"min_{roll_axis}", toe_min)
+            setattr(con, f"max_{roll_axis}", toe_max)
+            con.use_transform_limit = True
+            con.use_legacy_behavior = True
+            con.owner_space = 'LOCAL'
+            con.influence = 1.0
+
+            con = AddonFunctions.get_or_create_constraint(roll_foot, "ROLL - ", 'COPY_ROTATION')
+            con.target = obj
+            con.subtarget = roll_control.name
+            con.use_x = con.use_y = con.use_z = False
+            setattr(con, f"use_{roll_axis}", True)
+            con.target_space = 'LOCAL'
+            con.owner_space = 'LOCAL'
+            con.mix_mode = 'REPLACE'
+            con.influence = 1.0
+
+            con = AddonFunctions.get_or_create_constraint(roll_foot, "ROLL - ", 'LIMIT_ROTATION')
+            con.use_limit_x = con.use_limit_y = con.use_limit_z = True
+            setattr(con, f"min_{roll_axis}", foot_min)
+            setattr(con, f"max_{roll_axis}", foot_max)
+            con.use_transform_limit = True
+            con.use_legacy_behavior = True
+            con.owner_space = 'LOCAL'
+            con.influence = 1.0
+
+            con = AddonFunctions.get_or_create_constraint(roll_control, "ROLL - ", 'LIMIT_ROTATION')
+            con.use_limit_x = con.use_limit_y = con.use_limit_z = True
+            con.min_x = con.min_y = con.min_z = math.radians(-45)
+            con.max_x = con.max_y = con.max_z = math.radians(45)
+            con.use_transform_limit = True
+            con.use_legacy_behavior = True
+            con.owner_space = 'LOCAL'
+            con.influence = 1.0
+
+            con = AddonFunctions.get_or_create_constraint(toe_control, "ROLL - ", 'COPY_ROTATION')
+            con.target = obj
+            con.subtarget = roll_toe.name
+            setattr(con, f"use_{roll_axis}", True)
+            setattr(con, f"invert_{roll_axis}", True)
+            con.mix_mode = 'AFTER'
+            con.target_space = 'LOCAL'
+            con.owner_space = 'LOCAL'
+            con.influence = 1.0
+
+            con = AddonFunctions.get_or_create_constraint(toe, "", 'COPY_ROTATION')
+            con.target = obj
+            con.subtarget = toe_control.name
+            con.use_x = con.use_x = con.use_y = con.use_z = True
+            con.target_space = 'LOCAL'
+            con.owner_space = 'LOCAL'
+            con.mix_mode = 'REPLACE'
+            con.influence = 1.0
+
         self.report({'INFO'}, f"Generated Controller for LEG")
         return {'FINISHED'}
 
-'''class WRYC_OT_CreateFootController(bpy.types.Operator):
-    bl_idname = "wryc.ot_create_foot_controller"
-    bl_label = "Foot"
-    bl_description = "Create foot controller"
+class WRYC_OT_CreateMannyController(bpy.types.Operator):
+    bl_idname = "wryc.ot_create_manny_controller"
+    bl_label = "UE5 Manny"
     bl_options = {'REGISTER', 'UNDO'}
 
-    foot = bpy.props.StringProperty(name="Foot Bone")
-    ball = bpy.props.StringProperty(name="Ball Bone")
+    driver_coll_name: bpy.props.StringProperty(default="Driver", name="Driver Collection name")
+    target_coll_name: bpy.props.StringProperty(default="Target Bones", name="Target Collection name")
+    control_coll_name: bpy.props.StringProperty(default="Control Bones", name="Control Collection name")
+    gizmo_coll_name: bpy.props.StringProperty(default="Gizmo Bones", name="Gizmo Collection name")
+    mechanic_coll_name: bpy.props.StringProperty(default="Mechanic Bones", name="Mechanic Collection name")
+    offset_coll_name: bpy.props.StringProperty(default="Offset Bones", name="Offset Collection name")
 
-    target_ankle = bpy.props.StringProperty(name="Target Ankle")
-    target_heel = bpy.props.StringProperty(name="Target Foot")
-    target_ball = bpy.props.StringProperty(name="Target Ball")
-    target_roll = bpy.props.StringProperty(name="Target Roll")
 
-    def invoke(self, context, event):
+    def execute(self, context):
         if not AddonFunctions.check_pose_mode(context, self):
             return {'CANCELLED'}
-        return context.window_manager.invoke_props_dialog(self, width=300)
+        obj = context.active_object
+        arm = obj.data
+        pref = AddonFunctions.get_preferences()
 
-    def draw(self, context):
-        layout = self.layout
-        obj = context.object
+        driver_coll = AddonFunctions.get_or_create_collection(arm, self.driver_coll_name)
+        target_coll = AddonFunctions.get_or_create_collection(arm, self.target_coll_name)
+        control_coll = AddonFunctions.get_or_create_collection(arm, self.control_coll_name)
+        gizmo_coll = AddonFunctions.get_or_create_collection(arm, self.gizmo_coll_name)
+        mechanic_coll = AddonFunctions.get_or_create_collection(arm, self.mechanic_coll_name)
+        offset_coll = AddonFunctions.get_or_create_collection(arm, self.offset_coll_name)
 
-        if obj and obj.type == 'ARMATURE':
-            layout.label(text="Basic Bone")
-            layout.prop_search(self, "foot", obj.data, "bones", text="Foot")
-            layout.prop_search(self, "ball", obj.data, "bones", text="Ball")
+        for coll in (target_coll, control_coll, gizmo_coll, mechanic_coll, offset_coll):
+            coll.parent = driver_coll
 
-            layout.label(text="Control Bone")
-            layout.prop_search(self, "target_ankle", obj.data, "bones", text="GB Ankle")
-            layout.prop_search(self, "target_heel", obj.data, "bones", text="TB Heel")
-            layout.prop_search(self, "target_ball", obj.data, "bones", text="CB Ball")
-            layout.prop_search(self, "target_roll", obj.data, "bones", text="CB Roll")
+        basic_bone_names = [
+            "root",
+            "pelvis",
+            "spine_01", "spine_02", "spine_03", "spine_04", "spine_05",
+            "neck_01", "neck_02", "head",
+            "clavicle_l", "upperarm_l", "lowerarm_l", "hand_l",
+            "upperarm_twist_01_l", "upperarm_twist_02_l", "lowerarm_twist_02_l", "lowerarm_twist_01_l",
+            "thumb_01_l", "thumb_02_l", "thumb_03_l",
+            "index_metacarpal_l", "index_01_l", "index_02_l", "index_03_l",
+            "middle_metacarpal_l", "middle_01_l", "middle_02_l", "middle_03_l",
+            "ring_metacarpal_l", "ring_01_l", "ring_02_l", "ring_03_l",
+            "pinky_metacarpal_l", "pinky_01_l", "pinky_02_l", "pinky_03_l",
+            "thigh_l", "calf_l", "foot_l", "ball_l",
+            "thigh_twist_01_l", "thigh_twist_02_l", "calf_twist_02_l", "calf_twist_01_l",
+            "clavicle_r", "upperarm_r", "lowerarm_r", "hand_r",
+            "upperarm_twist_01_r", "upperarm_twist_02_r", "lowerarm_twist_02_r", "lowerarm_twist_01_r",
+            "thumb_01_r", "thumb_02_r", "thumb_03_r",
+            "index_metacarpal_r", "index_01_r", "index_02_r", "index_03_r",
+            "middle_metacarpal_r", "middle_01_r", "middle_02_r", "middle_03_r",
+            "ring_metacarpal_r", "ring_01_r", "ring_02_r", "ring_03_r",
+            "pinky_metacarpal_r", "pinky_01_r", "pinky_02_r", "pinky_03_r",
+            "thigh_r", "calf_r", "foot_r", "ball_r",
+            "thigh_twist_01_r", "thigh_twist_02_r", "calf_twist_02_r", "calf_twist_01_r",
+        ]
 
-            sub = layout.row()
-            sub.enabled = False
-            sub.label(text="If not select Control Bone, will generate new Control Bone")
+        for bone_name in basic_bone_names:
+            pb = obj.pose.bones.get(bone_name)
+            if not pb:
+                continue
 
-            row = layout.row()
-            row.enabled = bool(not self.target_ankle)
-            layout.prop(context.window_manager.bone_shapes_library, "foot_ankle_shape", expand=False, text="Ankle Shape")
+            shape_config = None
 
-            row = layout.row()
-            row.enabled = bool(not self.target_heel)
-            layout.prop(context.window_manager.bone_shapes_library, "foot_heel_shape", expand=False, text="Heel Shape")
+            if pb.name == "root":
+                shape_config = "root_shape"
+            elif "spine" in pb.name or pb.name in ["pelvis", "neck_01", "neck_02", "head"]:
+                shape_config = "spine_shape"
+            elif pb.name in ["upperarm_l", "lowerarm_l", "upperarm_r", "lowerarm_r", \
+                    "thigh_l", "calf_l", "thigh_r", "calf_r"]:
+                shape_config = "limbs_shape"
+            elif "twist" in pb.name:
+                shape_config = "twist_shape"
+                pb.lock_ik_x = True
+                pb.lock_ik_z = True
+            elif any(keyword in pb.name for keyword in ["thumb", "index", "middle", "ring", "pinky"]):
+                if "metacarpal" in pb.name.lower():
+                    shape_config = "metacarpal_shape"
+                else:
+                    shape_config = "finger_shape"
+            elif pb.name in ["hand_l", "hand_r"]:
+                shape_config = "joint_hand_shape"
+            elif pb.name in ["foot_l", "ball_l", "foot_r", "ball_r"]:
+                shape_config = "joint_foot_shape"
+            elif pb.name in ["clavicle_l", "clavicle_r"]:
+                shape_config = "clavicle_shape"
 
-            row = layout.row()
-            row.enabled = bool(not self.target_ball)
-            layout.prop(context.window_manager.bone_shapes_library, "foot_ball_shape", expand=False, text="Ball Shape")
+            if shape_config and pb.custom_shape is None:
+                AddonFunctions.apply_bone_shape_settings(pb, shape_config, obj)
 
-            row = layout.row()
-            row.enabled = bool(not self.target_roll)
-            layout.prop(context.window_manager.bone_shapes_library, "foot_roll_shape", expand=False, text="Roll Shape")
-        else:
-            layout.label(text="Select an Armature", icon="ERROR")
+        bpy.ops.wryc.ot_create_spine_controller('EXEC_DEFAULT',
+            head="head", chest="spine_05", pelvis="pelvis")
+        bpy.ops.wryc.ot_create_head_controller('EXEC_DEFAULT',
+            head="head", chest="spine_05")
+        bpy.ops.wryc.ot_create_arm_controller('EXEC_DEFAULT',
+            hand="hand_l", arm_length=2)
+        bpy.ops.wryc.ot_create_arm_controller('EXEC_DEFAULT',
+            hand="hand_r", arm_length=2)
+        bpy.ops.wryc.ot_create_leg_controller('EXEC_DEFAULT',
+            foot="foot_l", toe="ball_l", leg_length=2, is_create_toe=True)
+        bpy.ops.wryc.ot_create_leg_controller('EXEC_DEFAULT',
+            foot="foot_r", toe="ball_r", leg_length=2, is_create_toe=True)
 
-    def execute(self, context):'''
+        bpy.ops.object.mode_set(mode='POSE')
+        for pb in obj.pose.bones:
+            if pb.name.startswith(pref.prefix.target_prefix):
+                target_coll.assign(pb.bone)
+            elif pb.name.startswith(pref.prefix.control_prefix):
+                control_coll.assign(pb.bone)
+            elif pb.name.startswith(pref.prefix.gizmo_prefix):
+                gizmo_coll.assign(pb.bone)
+            elif pb.name.startswith(pref.prefix.mechanic_prefix):
+                mechanic_coll.assign(pb.bone)
+            elif pb.name.startswith(pref.prefix.offset_prefix):
+                offset_coll.assign(pb.bone)
+
+        self.report({'INFO'}, "Generated UE5 Manny controllers")
+        return {'FINISHED'}
 
 #__RETARGET ACTIONS__
 class WRYC_OT_SelectMappingActions(bpy.types.Operator):
@@ -1155,41 +1948,41 @@ class WRYC_OT_ApplyMappingToActions(bpy.types.Operator):
 
         for action_name in selected_actions:
             action = bpy.data.actions.get(action_name)
+            rename_count = 0
 
-            fcurve_to_modify = []
+            for fcurve_coll in AddonUtils.Compat.get_fcurve_collection(action):
+                fcurve_to_modify = []
 
-            for fcurve in action.fcurves:
-                data_path = fcurve.data_path
+                for fcurve in fcurve_coll:
+                    data_path = fcurve.data_path
 
-                if 'pose.bones["' in data_path:
-                    try:
-                        start = data_path.find('pose.bones["') + len('pose.bones["')
-                        end = data_path.find('"]', start)
-                        old_bone = data_path[start:end]
+                    if 'pose.bones["' in data_path:
+                        try:
+                            start = data_path.find('pose.bones["') + len('pose.bones["')
+                            end = data_path.find('"]', start)
+                            old_bone = data_path[start:end]
 
-                        if old_bone in bone_mappings_dict:
-                            fcurve_to_modify.append((fcurve, old_bone))
-                    except Exception as e:
-                        print(f"Skipping {data_path}({e})")
+                            if old_bone in bone_mappings_dict:
+                                fcurve_to_modify.append((fcurve, old_bone))
+                        except Exception as e:
+                            print(f"Skipping {data_path}({e})")
 
-            rename_count =0
+                for fcurve, old_bone in fcurve_to_modify:
+                    new_bone = bone_mappings_dict[old_bone]
 
-            for fcurve, old_bone in fcurve_to_modify:
-                new_bone = bone_mappings_dict[old_bone]
+                    if new_bone == "" or new_bone is None :
+                        fcurve_coll.remove(fcurve)
+                    else:
+                        new_path = fcurve.data_path.replace(f'["{old_bone}"]', f'["{new_bone}"]')
+                        fcurve.data_path = new_path
 
-                if new_bone == "" or new_bone is None :
-                    action.fcurves.remove(fcurve)
-                else:
-                    new_path = fcurve.data_path.replace(f'["{old_bone}"]', f'["{new_bone}"]')
-                    fcurve.data_path = new_path
+                        group = action.groups.get(new_bone)
+                        if not group:
+                            group = action.groups.new(name=new_bone)
+                        fcurve.group = group
 
-                    group = action.groups.get(new_bone)
-                    if not group:
-                        group = action.groups.new(name=new_bone)
-                    fcurve.group = group
-
-                    rename_count += 1
-                    print(f'renamed {old_bone} to {new_bone}')
+                        rename_count += 1
+                        print(f'renamed {old_bone} to {new_bone}')
 
         self.report({'INFO'}, f"Handled {len(selected_actions)} Actions" )
         return {'FINISHED'}

@@ -16,51 +16,54 @@ class WRYC_PT_CustomDisplayBone(BasePanel, bpy.types.Panel):
     bl_idname = "WRYC_PT_custom_display_bone"
 
     def draw(self, context):
-
         layout = self.layout
         settings = context.scene.bone_display_settings
 
-        layout.label(text="Shape")
-        row = layout.row(align=True)
+        box = layout.box()
+        box.label(text="Shape")
+        row = box.row(align=True)
         row.menu("WRYC_MT_generate_icon_menu", icon='DOWNARROW_HLT')
-        row.prop(context.window_manager.bone_shapes_library, "bone_shape", expand=False, text="")
+        row.prop(settings, "bone_shape", expand=False, text="")
+        box.prop(settings, "scale_bone_length_enable")
+        box.operator("wryc.ot_custom_bone_shape")
 
-        layout.prop(settings, "scale_bone_length_enable")
-        layout.operator("wryc.ot_custom_bone_shape")
-
-        layout.label(text="Color")
-        col = layout.column(align=True)
+        box = layout.box()
+        box.label(text="Color")
+        col = box.column(align=True)
         split = col.split(factor=0.4, align=True)
         split.label(text="Bone Color:")
         split.prop(settings, "bone_color", text="")
         split = col.split(factor=0.4, align=True)
         split.label(text="Pose Bone Color:")
         split.prop(settings, "pose_bone_color", text="")
-        layout.operator("wryc.ot_custom_bone_color")
+        box.operator("wryc.ot_custom_bone_color")
 
-        layout.label(text="Scale")
-        layout.prop(settings, "scale", text="Scale All")
-        layout.prop(settings, "scale_enable")
+        box = layout.box()
+        box.label(text="Scale")
+        box.prop(settings, "scale", text="Scale All")
+        box.prop(settings, "scale_enable")
         if not settings.scale_enable:
-            col = layout.column()
+            col = box.column()
             col.prop(settings, "scale_x")
             col.prop(settings, "scale_y")
             col.prop(settings, "scale_z")
-        layout.operator("wryc.ot_custom_bone_scale")
+        box.operator("wryc.ot_custom_bone_scale")
 
-        layout.label(text="Translation")
-        layout.prop(settings, "loc_x")
-        layout.prop(settings, "loc_y")
-        layout.prop(settings, "loc_z")
-        layout.operator("wryc.ot_custom_bone_loc")
+        box = layout.box()
+        box.label(text="Translation")
+        box.prop(settings, "loc_x")
+        box.prop(settings, "loc_y")
+        box.prop(settings, "loc_z")
+        box.operator("wryc.ot_custom_bone_loc")
 
+        box = layout.box()
+        box.label(text="Rotation")
+        box.prop(settings, "rot_x")
+        box.prop(settings, "rot_y")
+        box.prop(settings, "rot_z")
+        box.operator("wryc.ot_custom_bone_rot")
 
-        layout.label(text="Rotation")
-        layout.prop(settings, "rot_x")
-        layout.prop(settings, "rot_y")
-        layout.prop(settings, "rot_z")
-        layout.operator("wryc.ot_custom_bone_rot")
-
+        layout.operator("wryc.ot_copy_selected_bone_display_config")
         layout.operator("wryc.ot_custom_display_bone", icon = 'BONE_DATA')
 
     @classmethod
@@ -81,13 +84,16 @@ class WRYC_PT_GenerateConstraint(BasePanel, bpy.types.Panel):
         layout.label(text="Generate Deform Bones")
         layout.operator("wryc.ot_connect_deform_armature")
         layout.operator("wryc.ot_create_deform_bones")
+        layout.operator("wryc.ot_create_manny_deform_bones")
         layout.operator("wryc.ot_set_inverse_all_child_of")
 
         layout.label(text="Generate Constraints")
+        layout.operator("wryc.ot_create_head_controller")
+        layout.operator("wryc.ot_create_spine_controller")
         layout.operator("wryc.ot_create_arm_controller")
         layout.operator("wryc.ot_create_leg_controller")
-        #layout.operator("wryc.ot_create_foot_controller")
         layout.operator("wryc.ot_create_finger_controller")
+        layout.operator("wryc.ot_create_manny_controller")
 
     @classmethod
     def poll(cls, context: bpy.types.Context):
@@ -95,7 +101,7 @@ class WRYC_PT_GenerateConstraint(BasePanel, bpy.types.Panel):
 
 @reg_order(2)
 class WRYC_PT_RetargetActions(BasePanel, bpy.types.Panel):
-    bl_label = "RetargetActions"
+    bl_label = "Retarget Actions"
     bl_idname = "WRYC_PT_retarget_actions"
 
     def draw(self, context):

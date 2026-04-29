@@ -1,72 +1,15 @@
 import bpy
 import os
-from bpy.props import EnumProperty, BoolProperty, FloatProperty, StringProperty, PointerProperty, CollectionProperty, IntProperty
+from bpy.props import EnumProperty, BoolProperty, FloatProperty, StringProperty, PointerProperty, CollectionProperty, IntProperty,FloatVectorProperty
 from bpy.types import PropertyGroup
 from ..functions import AddonFunctions
 
-class ActionEntry(PropertyGroup):
-    name: StringProperty()
-    enabled: BoolProperty(default=False)
-
 #__CUSTOM DISPLAY SHAPE__
-class BoneShapesLibrary(PropertyGroup):
-
-    bone_shape: EnumProperty(
-        name="Bone Shape",
-        items=AddonFunctions.get_bone_shapes_library
-    )
-
-    finger_bone_shape: EnumProperty(
-        name="Finger Bone Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
-    arm_elbow_shape: EnumProperty(
-        name="Arm Elbow Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
-    arm_hand_shape: EnumProperty(
-        name="Arm Hand Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
-    leg_knee_shape: EnumProperty(
-        name="Leg Knee Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
-    leg_ankle_shape: EnumProperty(
-        name="Leg Foot Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
-    leg_offset_shape: EnumProperty(
-        name="Leg Offset Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
-    foot_ankle_shape: EnumProperty(
-        name="Foot Ankle Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
-    foot_heel_shape: EnumProperty(
-        name="Foot Heel Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
-    foot_ball_shape: EnumProperty(
-        name="Foot Ball Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
-    foot_roll_shape: EnumProperty(
-        name="Foot Roll Shape",
-        items=AddonFunctions.get_bone_shapes_library,
-    )
-
 class BoneDisplaySettings(PropertyGroup):
+    bone_shape: EnumProperty(
+        name="Shape",
+        items=AddonFunctions.get_bone_shapes_library,
+    )
 
     scale_bone_length_enable: BoolProperty(
         name="Enable Scale Bone Length",
@@ -114,10 +57,12 @@ class DeformSettings(bpy.types.PropertyGroup):
     )
 
 #__RETARGET ACTIONS__
+class ActionEntry(PropertyGroup):
+    name: StringProperty()
+    enabled: BoolProperty(default=False)
 class BoneMapItems(PropertyGroup):
     source: StringProperty(name="Source Bone")
     target: StringProperty(name="Target Bone")
-
 class BoneMappingSettings(PropertyGroup):
     show_mappings_settings: BoolProperty(default=True)
 
@@ -164,9 +109,9 @@ class BoneMappingSettings(PropertyGroup):
 
     def set_last_path(self, path):
         self.last_path = path
+
 #__RENAME TOOL__
 class RenameTool(PropertyGroup):
-
     rename_target: EnumProperty(
         name="Target",
         items=[

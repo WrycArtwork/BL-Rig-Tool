@@ -1,12 +1,18 @@
 import difflib
 import math
-from typing import final
+from email.policy import default
 
 import bpy
 import os
 import mathutils
 
+from bpy.utils import previews
+from numpy.lib.utils import source
+from numpy.matrixlib.defmatrix import matrix
+
 from ..config import __addon_name__
+from ..utils import AddonUtils
+
 
 def get_preferences():
     return bpy.context.preferences.addons[__addon_name__].preferences
@@ -55,7 +61,7 @@ def get_library_path():
     return os.path.normpath(os.path.join(path, "BoneShapesLibrary.blend"))
 
 def load_icon_preview():
-    pcoll = bpy.utils.previews.new()
+    pcoll = previews.new()
     icon_path = get_icon_folder()
 
     for filename in os.listdir(icon_path):
@@ -67,7 +73,7 @@ def load_icon_preview():
 
 def unload_icon_preview():
     for pcoll in preview_collections.values():
-        bpy.utils.previews.remove(pcoll)
+        previews.remove(pcoll)
     preview_collections.clear()
 
 def generate_icon(self, context, distance, angle, keep_generated):
@@ -75,7 +81,7 @@ def generate_icon(self, context, distance, angle, keep_generated):
     icon_path = get_icon_folder()
     os.makedirs(icon_path, exist_ok=True)
 
-    selected_name = context.window_manager.bone_shapes_library.bone_shape
+    selected_name = context.scene.bone_display_settings.bone_shape
     if not selected_name or selected_name == "None":
         self.report({'INFO'}, f"Bone Shape {blend_path} not found")
         return {'CANCELLED'}
@@ -193,20 +199,18 @@ def generate_icon(self, context, distance, angle, keep_generated):
 
             if obj.name in scene.objects:
                 bpy.data.objects.remove(obj, do_unlink=True)
-        else:
-            return {'FINISHED'}
 
     self.report({'INFO'}, f"Saved icon: {icon_path}")
     load_icon_preview()
     return {'FINISHED'}
 
 def remove_icon(self, context):
-    selected_name = context.window_manager.bone_shapes_library.bone_shape
+    selected_name = context.scene.bone_display_settings.bone_shape
 
     if not selected_name or selected_name == "None":
         return {'CANCELLED'}
     icon_path = get_icon_folder()
-    icon_file = os.path.join(icon_path, f"(selected_name).png")
+    icon_file = os.path.join(icon_path, f"{selected_name}.png")
 
     if os.path.exists(icon_file):
         os.remove(icon_file)
@@ -217,27 +221,34 @@ def remove_icon(self, context):
     return {'FINISHED'}
 
 def get_bone_shapes_library(self, context):
-    blend_path = get_library_path()
-    blend_path = os.path.abspath(blend_path)
+    blend_path = os.path.abspath(get_library_path())
+
+    current_filepath = os.path.abspath(bpy.data.filepath)
 
     items = []
 
     if os.path.exists(blend_path):
         try:
-            with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
-                for index, obj_name in enumerate(data_from.objects):
-                    if obj_name is None or obj_name.strip() == "":
-                        continue
+            object_names = []
+            if blend_path == current_filepath:
+                object_names = [obj.name for obj in bpy.data.objects]
+            else:
+                with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
+                    object_names = [name for name in data_from.objects if name]
 
-                    icon_coll = preview_collections.get("custom_icons", {})
-                    icon_id = 'ERROR'
+            for index, obj_name in enumerate(object_names):
+                if obj_name is None or obj_name.strip() == "":
+                    continue
 
-                    if icon_coll:
-                        icon = icon_coll.get(obj_name)
-                        if icon and hasattr(icon, "icon_id"):
-                            icon_id = icon.icon_id
+                icon_coll = preview_collections.get("custom_icons", {})
+                icon_id = 'ERROR'
 
-                    items.append((obj_name, obj_name, "Bone Shape Object", icon_id, index))
+                if icon_coll:
+                    icon = icon_coll.get(obj_name)
+                    if icon and hasattr(icon, "icon_id"):
+                        icon_id = icon.icon_id
+
+                items.append((obj_name, obj_name, "Bone Shape Object", icon_id, index))
 
             items.sort(key=lambda x: x[1])
         except Exception as e:
@@ -272,18 +283,73 @@ def bone_color_items(self, context):
     return items
 
 #__GENERATE CONSTRAINT__
-def apply_child_of_inverse(context, obj, pose_bone, constraint):
-    arm = obj.data
+def get_or_create_collection(arm, collection_name):
+    name = str(collection_name)
+    stack = list(arm.collections)
+    while stack:
+        coll = stack.pop()
+        if coll.name == name:
+            return coll
+        stack.extend(coll.children)
+    return arm.collections.new(name)
 
+def apply_child_of_inverse(context, obj, pose_bone, constraint):
     bpy.ops.pose.select_all(action='DESELECT')
 
-    arm.bones.active = arm.bones[pose_bone.name]
-    arm.bones[pose_bone.name].select = True
+    obj.data.bones.active = pose_bone.bone
+    AddonUtils.Compat.bone_selection(pose_bone, True)
 
     bpy.ops.constraint.childof_set_inverse(
         constraint=constraint.name,
         owner='BONE'
     )
+
+def create_deform_bone(obj, target_pb, matrix_pb, def_bone_name, mapping, relation='head', parent_name=""):
+    arm = obj.data
+
+    bone_head_pos = matrix_pb.head.copy() if relation == 'head' else matrix_pb.tail.copy()
+    bone_length = target_pb.length
+
+    local_matrix = matrix_pb.matrix.to_3x3()
+    bl_axes_vecs = {
+        'X': local_matrix.col[0],
+        'Y': local_matrix.col[1],
+        'Z': local_matrix.col[2],
+    }
+
+    ue_axes = {}
+    for bl_axis, ue_axis_raw in mapping.items():
+        sign = -1.0 if ue_axis_raw.startswith('-') else 1.0
+        axis_letter = ue_axis_raw.lstrip('-')
+        ue_axes[axis_letter] = bl_axes_vecs[bl_axis] * sign
+
+    target_rot_matrix = mathutils.Matrix((
+        ue_axes['X'],
+        ue_axes['Y'],
+        ue_axes['Z']
+    )).transposed()
+
+    direction = target_rot_matrix.col[1].normalized()
+    bone_tail_pos = bone_head_pos + direction * bone_length
+
+    if def_bone_name in arm.edit_bones:
+        arm.edit_bones.remove(arm.edit_bones[def_bone_name])
+
+    new_bone = arm.edit_bones.new(name=def_bone_name)
+    new_bone.head = bone_head_pos
+    new_bone.tail = bone_tail_pos
+
+    new_bone.matrix = mathutils.Matrix.LocRotScale(bone_head_pos, target_rot_matrix, None)
+    new_bone.length = bone_length
+
+    new_bone.use_connect = False
+    if parent_name and parent_name in arm.edit_bones:
+        new_bone.parent = arm.edit_bones[parent_name]
+
+    created_bone_name = new_bone.name
+
+    return created_bone_name
+
 def get_or_create_constraint(pb, prefix, ctype):
     con = None
     for existing in pb.constraints:
@@ -295,136 +361,146 @@ def get_or_create_constraint(pb, prefix, ctype):
         con.name = f"{prefix}{ctype.replace('_', ' ').title()}"
     return con
 
-def ensure_target(obj, source_name, target_name, shape_name="None", parent_name=None, use_connect=None, position=None, length=0.0):
+def apply_bone_shape_settings(pb, config=None, armature=None):
+    #if config is not None:
+    pref = get_preferences()
+    settings = getattr(pref.general, config, None)
+
+    shape_name = settings.shape
+    blend_path = get_library_path()
+    with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
+        if shape_name in data_from.objects:
+            data_to.objects = [shape_name]
+    shape_obj = bpy.data.objects.get(shape_name)
+
+    if shape_obj:
+        pb.custom_shape = shape_obj
+    if settings.color:
+        armature.pose.bones[pb.name].color.palette = settings.color
+    pb.custom_shape_translation = settings.loc
+    pb.custom_shape_rotation_euler = settings.rot
+    pb.custom_shape_scale_xyz = settings.scale
+
+def ensure_target(obj, source_bone, target_bone, config=None, parent_bone=None, use_connect=None, position=None, length=0.1, mode="DEFAULT",ref_name=None):
     arm = obj.data
 
-    if hasattr(source_name, "name"):
-        source_name = source_name.name
-    if hasattr(target_name, "name"):
-        target_name = target_name.name
-    if hasattr(parent_name, "name"):
-        parent_name = parent_name.name
+    source_name = source_bone.name if hasattr(source_bone, "name") else source_bone
+    target_name = target_bone.name if hasattr(target_bone, "name") else target_bone
+    parent_name = parent_bone if isinstance(parent_bone, str) else None
 
-    if target_name in arm.bones:
-        return obj.pose.bones[target_name]
+    if target_bone in arm.bones:
+        return obj.pose.bones[target_bone]
 
     bpy.ops.object.mode_set(mode='EDIT')
-    eb_src = arm.edit_bones[source_name]
+
+    eb_src = arm.edit_bones.get(source_name)
+    if not eb_src:
+        bpy.ops.object.mode_set(mode='POSE')
+        return None
+
+    eb_ref = arm.edit_bones.get(ref_name) if ref_name else None
     new_bone = arm.edit_bones.new(target_name)
 
-    src_vec = eb_src.tail - eb_src.head
-    src_len = src_vec.length
-    if src_len <= 1e-8:
-        src_vec = mathutils.Vector((0, 0, 0))
-        src_len = 1.0
-
-    if position is not None:
-        head = position
-        use_len = (length if (length is not None and length > 1e-8) else src_len)
-        dir_n = src_vec.normalized()
-        tail = head + dir_n * use_len
-    else:
-        head = eb_src.head
-        tail = eb_src.tail
-    new_bone.head = head
-    new_bone.tail = tail
-    new_bone.roll = eb_src.roll
-    new_bone.use_deform = False
-
-
-    if parent_name is not None:
-        if parent_name == "":
-            new_bone.parent = None
-            new_bone.use_connect = False
+    if mode == "DEFAULT":
+        new_bone.head = eb_src.head
+        new_bone.tail = eb_src.tail
+        new_bone.roll = eb_src.roll
+    elif mode == "POLE_TARGET":
+        if position is not None:
+            local_pos = obj.matrix_world.inverted() @ position
+            new_bone.head = local_pos
+            new_bone.tail = local_pos + mathutils.Vector((0, 0, length))
+            new_bone.roll = 0
         else:
-            new_bone.parent = arm.edit_bones[parent_name]
-            new_bone.use_connect = bool(use_connect) if use_connect is not None else False
-    else:
-        new_bone.parent = eb_src.parent
-        new_bone.use_connect = bool(use_connect) if use_connect is not None else eb_src.use_connect
+            new_bone.head = eb_src.head
+            new_bone.tail = eb_src.tail
+            new_bone.roll = eb_src.roll
+    elif mode == "FOOT_TO_FLOOR":
+        new_bone.head = eb_src.tail
+        new_bone.roll = eb_src.roll
+        new_bone.tail = mathutils.Vector((
+            new_bone.head.x,
+            new_bone.head.y,
+            obj.location.z,
+        ))
+    elif mode == "FOOT_UNDER_FLOOR":
+        new_bone.head = eb_src.tail
+        new_bone.tail = eb_src.tail + mathutils.Vector((0, 0, -length))
+        new_bone.roll = eb_src.roll
+    elif mode == "BALL_ROLL":
+        direction = (eb_src.head - eb_src.tail)
+        direction.z = 0
+        direction = direction.normalized()
+        new_bone.head = eb_src.head
+        new_bone.tail = eb_src.head + (direction * length)
+        new_bone.roll = eb_src.roll
+    elif mode == "FOOT_ROLL":
+        direction = (eb_ref.head - eb_src.tail)
+        direction.z = 0
+        direction = direction.normalized()
+        new_bone.head = eb_src.tail
+        new_bone.tail = eb_src.tail + (direction * length)
+        new_bone.roll = eb_ref.roll + math.pi
+    elif mode == "FOOT_CONTROL":
+        direction = (eb_src.tail - eb_ref.head)
+        direction.z = 0
+        direction = direction.normalized()
+        new_bone.head = eb_src.tail
+        new_bone.tail = eb_src.tail + (direction * length)
+        new_bone.roll = eb_ref.roll
+    elif mode == "CHAIN_TARGET":
+        new_bone.head = eb_src.head + position
+        new_bone.tail = new_bone.head + mathutils.Vector((0, 0, length))
+        new_bone.roll = eb_src.roll
+    elif mode == "CHAIN_GIZMO":
+        new_bone.head = eb_src.head + position
+        new_bone.tail = eb_src.tail + position
+        new_bone.roll = eb_src.roll
+    elif mode == "HEAD_TRACK":
+        new_bone.head = eb_src.head
+        new_bone.tail = eb_src.head + mathutils.Vector((0, -length, 0))
+        new_bone.roll = eb_src.roll
+    elif mode == "HEAD_TARGET":
+        new_bone.head = eb_ref.tail
+        new_bone.tail = new_bone.head + mathutils.Vector((0, 0, length))
+        new_bone.roll = eb_src.roll
 
-    bpy.ops.object.mode_set(mode='POSE')
-    pb_new = obj.pose.bones[target_name]
-
-    if shape_name and shape_name != "None":
-        blend_path = get_library_path()
-        shape_obj = bpy.data.objects.get(shape_name)
-        if not shape_obj:
-            with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
-                if shape_name in data_from.objects:
-                    data_to.objects = [shape_name]
-            shape_obj = bpy.data.objects.get(shape_name)
-        if shape_obj:
-            pb_new.custom_shape = shape_obj
-
-    return pb_new
-
-def ensure_foot_ob_bone(obj, source_name, target_name, shape_name="None", ):
-    arm = obj.data
-
-    if hasattr(source_name, "name"):
-        source_name = source_name.name
-    if hasattr(target_name, "name"):
-        target_name = target_name.name
-
-    if target_name in arm.bones:
-        return obj.pose.bones[target_name]
-
-    bpy.ops.object.mode_set(mode='EDIT')
-    eb_src = arm.edit_bones[source_name]
-    new_bone = arm.edit_bones.new(target_name)
-
-    new_bone.head = eb_src.tail
-    new_bone.roll = eb_src.roll
-    new_bone.tail = mathutils.Vector((
-        new_bone.head.x,
-        new_bone.head.y,
-        obj.location.z,
-    ))
     new_bone.use_deform = False
+    if parent_name == "":
+        new_bone.parent = None
+        new_bone.use_connect = False
+    elif parent_name:
+        new_bone.parent = arm.edit_bones[parent_name]
+        new_bone.use_connect = bool(use_connect)
+    else:
+        new_bone.parent = None
+        new_bone.use_connect = bool(use_connect)
 
     bpy.ops.object.mode_set(mode='POSE')
-    pb_new = obj.pose.bones[target_name]
+    pb_new = obj.pose.bones.get(target_bone)
 
-    if shape_name and shape_name != "None":
-        blend_path = get_library_path()
-        shape_obj = bpy.data.objects.get(shape_name)
-        if not shape_obj:
-            with bpy.data.libraries.load(blend_path, link=False) as (data_from, data_to):
-                if shape_name in data_from.objects:
-                    data_to.objects = [shape_name]
-            shape_obj = bpy.data.objects.get(shape_name)
-        if shape_obj:
-            pb_new.custom_shape = shape_obj
+    if pb_new and config:
+        apply_bone_shape_settings(pb_new, config, obj)
 
     return pb_new
 
-def compute_pole_position(obj, upper_name, lower_name, end_name, direction="X+", distance=0.5):
-    pb_upper = obj.pose.bones[upper_name]
-    pb_lower = obj.pose.bones[lower_name]
-    pb_end = obj.pose.bones[end_name]
+def compute_pole_position(obj, upper_name, lower_name, end_name, distance=0.3):
+    pb_upper = obj.matrix_world @ obj.pose.bones[upper_name].head
+    pb_lower = obj.matrix_world @ obj.pose.bones[lower_name].head
+    pb_end = obj.matrix_world @ obj.pose.bones[end_name].head
 
-    u = obj.matrix_world @ pb_upper.head
-    l = obj.matrix_world @ pb_lower.head
-    e = obj.matrix_world @ pb_end.head
+    v_upper = pb_lower - pb_upper
+    v_line = pb_end - pb_upper
 
-    axis_map = {
-        "X+": pb_lower.x_axis,
-        "X-": -pb_lower.x_axis,
-        "Y+": pb_lower.y_axis,
-        "Y-": -pb_lower.y_axis,
-        "Z+": pb_lower.z_axis,
-        "Z-": -pb_lower.z_axis,
-    }
+    #projection
+    proj = v_line.dot(v_upper) / v_line.dot(v_line)
+    pb_proj = pb_upper + proj * v_line
+    pole_dir = (pb_lower - pb_proj).normalized()
 
-    if direction not in axis_map:
-        direction = "X+"
+    if pole_dir.length < 0.0001:
+        pole_dir = (obj.matrix_world.to_3x3() @ obj.pose.bones[lower_name].x_axis).normalized()
 
-    pole_dir_local = axis_map[direction].normalized()
-    pole_dir_world = obj.matrix_world.to_3x3() @ pole_dir_local
-
-    len = (e - u).length
-    pole_pos = u + pole_dir_world * (len * distance)
+    pole_pos = pb_lower + pole_dir * distance
 
     return pole_pos
 
@@ -432,12 +508,12 @@ def compute_pole_angle(obj, upper_name, end_name, pole_pos_world):
     upper = obj.pose.bones[upper_name]
     end = obj.pose.bones[end_name]
 
-    upper_matrix = upper.bone.matrix_local
-    upper_matrix_inv = upper_matrix.inverted()
-    pole_local = upper_matrix_inv @ pole_pos_world
+    pole_pos_pose = obj.matrix_world.inverted() @ pole_pos_world
+    upper_matrix_inv = upper.bone.matrix_local.inverted()
+    pole_local = upper_matrix_inv @ pole_pos_pose
     head_local = upper_matrix_inv @ upper.head
     tail_local = upper_matrix_inv @ upper.tail
-    end_tail_local = upper_matrix_inv @ end.tail
+    end_tail_local = upper_matrix_inv @ end.head
 
     pole_normal = (end_tail_local - head_local).cross(pole_local - head_local)
     bone_dir = (tail_local - head_local).normalized()
@@ -451,6 +527,29 @@ def compute_pole_angle(obj, upper_name, end_name, pole_pos_world):
         angle = -angle
 
     return angle
+
+def detect_roll_axis(obj, toe_name, foot_name):
+    target_bone = obj.data.bones.get(toe_name)
+    dir_bone = obj.data.bones.get(foot_name)
+    forward_vec = target_bone.head - dir_bone.head
+    forward_vec.z = 0
+    forward_vec = forward_vec.normalized()
+    up_vec= mathutils.Vector((0, 0, 1))
+    right_vec = forward_vec.cross(up_vec).normalized()
+
+    mat = target_bone.matrix_local.to_3x3()
+
+    local_axis = {
+        'x' : mat.col[0].normalized(),
+        'y' : mat.col[1].normalized(),
+        'z' : mat.col[2].normalized(),
+    }
+
+    roll_axis = max(local_axis, key=lambda a: abs(local_axis[a].dot(right_vec)))
+    dot_signed = local_axis[roll_axis].dot(right_vec)
+
+    is_positive = dot_signed > 0
+    return roll_axis, is_positive
 
 def collect_bone_chain(root_pbone):
     chain = []

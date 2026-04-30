@@ -435,7 +435,7 @@ class WRYC_OT_ConnectDeformArmature(bpy.types.Operator):
 
 class WRYC_OT_CreateDeformBones(bpy.types.Operator):
     bl_idname = "wryc.ot_create_deform_bones"
-    bl_label = "Generate Deform Bones"
+    bl_label = "Generate Deform"
     bl_description = "Generate virtual deform bones form active armature"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -587,11 +587,11 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
 
 class WRYC_OT_CreateMannyDeformBones(bpy.types.Operator):
     bl_idname = "wryc.ot_create_manny_deform_bones"
-    bl_label = "Generate UE5 Manny Deform Bones"
+    bl_label = "UE5 Manny Deform"
     bl_options = {'REGISTER', 'UNDO'}
 
-    def_coll_name: bpy.props.StringProperty(default="Deform Bones")
-    def_body_coll_name:bpy.props.StringProperty(default="Deform(Body)")
+    def_coll_name: bpy.props.StringProperty(default="Deform Bones", name="Deform Collection Name")
+    def_body_coll_name:bpy.props.StringProperty(default="Deform(Body)", name="Deform Body Collection Name")
 
     def execute(self, context):
         if not AddonFunctions.check_pose_mode(context, self):
@@ -629,8 +629,8 @@ class WRYC_OT_CreateMannyDeformBones(bpy.types.Operator):
             ("clavicle_l", "clavicle_l", left_hand_right_leg_mapping, 'head'),
             ("upperarm_l", "upperarm_l", left_hand_right_leg_mapping, 'head'),
             ("lowerarm_l", "lowerarm_l", left_hand_right_leg_mapping, 'head'),
-            ("upperarm_twist_01_l", "upperarm_twist_01_l", left_hand_wrist_mapping, 'tail'),
-            ("upperarm_twist_02_l", "upperarm_twist_02_l", left_hand_wrist_mapping, 'tail'),
+            ("upperarm_twist_01_l", "upperarm_twist_01_l", left_hand_right_leg_mapping, 'tail'),
+            ("upperarm_twist_02_l", "upperarm_twist_02_l", left_hand_right_leg_mapping, 'tail'),
             ("lowerarm_twist_01_l", "lowerarm_twist_01_l", left_hand_wrist_mapping, 'tail'),
             ("lowerarm_twist_02_l", "lowerarm_twist_02_l", left_hand_wrist_mapping, 'tail'),
             # Left Hand
@@ -658,8 +658,8 @@ class WRYC_OT_CreateMannyDeformBones(bpy.types.Operator):
             ("clavicle_r", "clavicle_r", right_hand_left_leg_mapping, 'head'),
             ("upperarm_r", "upperarm_r", right_hand_left_leg_mapping, 'head'),
             ("lowerarm_r", "lowerarm_r", right_hand_left_leg_mapping, 'head'),
-            ("upperarm_twist_01_r", "upperarm_twist_01_r", right_hand_wrist_mapping, 'tail'),
-            ("upperarm_twist_02_r", "upperarm_twist_02_r", right_hand_wrist_mapping, 'tail'),
+            ("upperarm_twist_01_r", "upperarm_twist_01_r", right_hand_left_leg_mapping, 'tail'),
+            ("upperarm_twist_02_r", "upperarm_twist_02_r", right_hand_left_leg_mapping, 'tail'),
             ("lowerarm_twist_01_r", "lowerarm_twist_01_r", right_hand_wrist_mapping, 'tail'),
             ("lowerarm_twist_02_r", "lowerarm_twist_02_r", right_hand_wrist_mapping, 'tail'),
             # Right Hand
@@ -677,7 +677,7 @@ class WRYC_OT_CreateMannyDeformBones(bpy.types.Operator):
             ("middle_03_r", "middle_03_r", right_hand_left_leg_mapping, 'head'),
             ("ring_metacarpal_r", "ring_metacarpal_r", right_hand_left_leg_mapping, 'head'),
             ("ring_01_r", "ring_01_r", right_hand_left_leg_mapping, 'head'),
-            ("ring_02_r", "ring_01_r", right_hand_left_leg_mapping, 'head'),
+            ("ring_02_r", "ring_02_r", right_hand_left_leg_mapping, 'head'),
             ("ring_03_r", "ring_03_r", right_hand_left_leg_mapping, 'head'),
             ("pinky_metacarpal_r", "pinky_metacarpal_r", right_hand_left_leg_mapping, 'head'),
             ("pinky_01_r", "pinky_01_r", right_hand_left_leg_mapping, 'head'),
@@ -756,6 +756,11 @@ class WRYC_OT_CreateMannyDeformBones(bpy.types.Operator):
                 con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'CHILD_OF')
                 con.target = obj
                 con.subtarget = orig_name
+                con.use_location_x = con.use_location_y = con.use_location_z = True
+                con.use_rotation_x = con.use_rotation_y = con.use_rotation_z = True
+                con.use_scale_x = con.use_scale_y = con.use_scale_z = True
+                con.influence = 1.0
+
                 obj.data.bones.active = obj.data.bones[def_name]
                 bpy.ops.constraint.childof_set_inverse(constraint=con.name, owner='BONE')
 
@@ -958,11 +963,11 @@ class WRYC_OT_CreateSpineController(bpy.types.Operator):
         spline.points.add(2)
         spline.use_endpoint_u = True
 
-        pelvis_world = obj.matrix_world @ target_pelvis.head
-        chest_world = obj.matrix_world @ target_chest.head
-        head_world = obj.matrix_world @ target_head.head
+        pelvis_world = target_pelvis.head
+        chest_world = target_chest.head
+        head_world = target_head.head
 
-        for i, (pt, pos) in enumerate(zip(spline.points, [pelvis_world, chest_world, head_world])):
+        for i, (pt, pos) in enumerate(zip(spline.points, [target_pelvis.head, target_chest.head, target_head.head])):
             pt.co = (*pos, 1.0)
             pt.weight = 1.0
 

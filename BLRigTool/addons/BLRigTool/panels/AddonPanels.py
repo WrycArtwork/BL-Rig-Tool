@@ -82,9 +82,9 @@ class WRYC_PT_GenerateConstraint(BasePanel, bpy.types.Panel):
         layout.operator("wryc.ot_remove_constrains")
 
         layout.label(text="Generate Deform Bones")
-        layout.operator("wryc.ot_connect_deform_armature")
         layout.operator("wryc.ot_create_deform_bones")
         layout.operator("wryc.ot_create_manny_deform_bones")
+        layout.operator("wryc.ot_connect_deform_armature")
         layout.operator("wryc.ot_set_inverse_all_child_of")
 
         layout.label(text="Generate Constraints")

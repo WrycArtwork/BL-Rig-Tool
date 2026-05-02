@@ -1770,6 +1770,9 @@ class WRYC_OT_CreateMannyController(bpy.types.Operator):
         arm = obj.data
         pref = AddonFunctions.get_preferences()
 
+        mirror_mode = arm.use_mirror_x
+        arm.use_mirror_x = False
+
         driver_coll = AddonFunctions.get_or_create_collection(arm, self.driver_coll_name)
         target_coll = AddonFunctions.get_or_create_collection(arm, self.target_coll_name)
         control_coll = AddonFunctions.get_or_create_collection(arm, self.control_coll_name)
@@ -1811,8 +1814,6 @@ class WRYC_OT_CreateMannyController(bpy.types.Operator):
                 continue
 
             shape_config = None
-            mirror_mode = arm.use_mirror_x
-            arm.use_mirror_x = False
 
             if pb.name == "root":
                 shape_config = "root_shape"
@@ -1853,8 +1854,9 @@ class WRYC_OT_CreateMannyController(bpy.types.Operator):
         bpy.ops.wryc.ot_create_leg_controller('EXEC_DEFAULT',
             foot="foot_r", toe="ball_r", leg_length=2, is_create_toe=True)
 
-        finger_prefixes = ["thumb", "index", "middle", "ring", "pinky"]
         sides = ["_l", "_r"]
+        finger_prefixes = ["thumb", "index", "middle", "ring", "pinky"]
+        twist_prefixes = ["lowerarm_twist_02", "lowerarm_twist_01", "calf_twist_02", "calf_twist_01"]
 
         for side in sides:
             for root in finger_prefixes:
@@ -1862,7 +1864,6 @@ class WRYC_OT_CreateMannyController(bpy.types.Operator):
                 if finger_bone_name in obj.pose.bones:
                     bpy.ops.wryc.ot_create_finger_controller('EXEC_DEFAULT', root_bone = finger_bone_name)
 
-        for side in sides:
             control_meta = AddonFunctions.ensure_target(
                 obj,
                 f"pinky_metacarpal{side}",
@@ -1871,6 +1872,16 @@ class WRYC_OT_CreateMannyController(bpy.types.Operator):
                 f"hand{side}",
                 False,
             )
+
+            control_clavicle = AddonFunctions.ensure_target(
+                obj,
+                f"clavicle{side}",
+                f"{pref.prefix.control_prefix}clavicle{side}",
+                "clavicle_control_shape",
+                "spine_05",
+                False
+            )
+
             for name in finger_prefixes[2:]:
                 pb = obj.pose.bones.get(f"{name}_metacarpal{side}")
                 con = AddonFunctions.get_or_create_constraint(pb,"METACARPAL", 'COPY_ROTATION')
@@ -1887,7 +1898,44 @@ class WRYC_OT_CreateMannyController(bpy.types.Operator):
                 elif name == finger_prefixes[4]:
                     con.influence = 1.0
 
-        arm.use_mirror_x = mirror_mode
+            for name in twist_prefixes:
+                pb = obj.pose.bones.get(f"{name}{side}")
+                con = AddonFunctions.get_or_create_constraint(pb,"TWIST - ", 'IK')
+                con.target = obj
+                if name.startswith("lowerarm"):
+                    con.subtarget = f"hand{side}"
+                elif name.startswith("calf"):
+                    con.subtarget = f"foot{side}"
+                con.chain_count = 1
+                con.use_tail = True
+                con.use_stretch = False
+                con.use_location = False
+                con.use_rotation = True
+                if name.endswith("01"):
+                    con.influence = 0.7
+                elif name.endswith("02"):
+                    con.influence = 0.2
+
+            pb = obj.pose.bones.get(f"clavicle{side}")
+            con = AddonFunctions.get_or_create_constraint(pb,"CONTROL - ", 'COPY_ROTATION')
+            con.target = obj
+            con.subtarget = control_clavicle.name
+            con.use_x = con.use_y = con.use_z = True
+            con.mix_mode = 'REPLACE'
+            con.target_space = 'LOCAL'
+            con.owner_space = 'LOCAL'
+            con.influence = 1.0
+
+        bpy.ops.object.mode_set(mode='EDIT')
+
+        head_track = arm.edit_bones.get(f"{pref.prefix.target_prefix}{pref.prefix.track_prefix}head")
+        head_traget = arm.edit_bones.get(f"{pref.prefix.target_prefix}head")
+        spine_target = arm.edit_bones.get(f"{pref.prefix.target_prefix}spine_05")
+        pelvis_target = arm.edit_bones.get(f"{pref.prefix.target_prefix}pelvis")
+        cbp_child = [head_track, head_traget, spine_target, pelvis_target]
+
+        for bone in cbp_child:
+            bone.parent = arm.edit_bones["root"]
 
         bpy.ops.object.mode_set(mode='POSE')
         for pb in obj.pose.bones:
@@ -1901,6 +1949,8 @@ class WRYC_OT_CreateMannyController(bpy.types.Operator):
                 mechanic_coll.assign(pb.bone)
             elif pb.name.startswith(pref.prefix.offset_prefix):
                 offset_coll.assign(pb.bone)
+
+        arm.use_mirror_x = mirror_mode
 
         self.report({'INFO'}, "Generated UE5 Manny controllers")
         return {'FINISHED'}

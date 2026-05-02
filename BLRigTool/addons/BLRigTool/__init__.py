@@ -29,6 +29,21 @@ _addon_properties = {
      },
  }
 
+
+def init_pref_defaults():
+    try:
+        pref = get_preferences()
+        if not pref.general.is_initialized:
+            pref.general.set_defaults()
+    except Exception:
+        pass
+
+def ue5_manny_add(self, context):
+    print("UE5 Manny Add")
+    layout = self.layout
+    layout.separator()
+    layout.menu("WRYC_MT_add_ue5_manny_menu", icon="ARMATURE_DATA")
+
 def register():
     # Register classes
     auto_load.init()
@@ -40,11 +55,9 @@ def register():
     # Internationalization
     load_dictionary(dictionary)
     bpy.app.translations.register(__addon_name__, common_dictionary)
-
-    def init_pref_defaults():
-        pref = get_preferences()
-        if not pref.general.is_initialized:
-            pref.general.set_defaults()
+    #Register ue5 manny add menu
+    bpy.types.VIEW3D_MT_armature_add.append(ue5_manny_add)
+    #Register basic shape configs in preference
     bpy.app.timers.register(init_pref_defaults, first_interval=0.1)
 
     print("{} addon is installed.".format(__addon_name__))
@@ -52,6 +65,8 @@ def register():
 def unregister():
     #Remove bone Shape Icon
     bpy.app.handlers.load_post.remove(load_icon_preview())
+    # Remove ue5 manny add menu
+    bpy.types.VIEW3D_MT_armature_add.remove(ue5_manny_add)
     # Internationalization
     bpy.app.translations.unregister(__addon_name__)
     # unRegister classes

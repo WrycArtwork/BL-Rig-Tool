@@ -53,11 +53,11 @@ def sort_actions(collection):
 #__CUSTOM DISPLAY SHAPE__
 preview_collections = {}
 def get_icon_folder():
-    path = get_preferences().bone_shape_folder
+    path = get_preferences().assets_folder
     return os.path.normpath(os.path.join(path, "icons"))
 
 def get_library_path():
-    path = get_preferences().bone_shape_folder
+    path = get_preferences().assets_folder
     return os.path.normpath(os.path.join(path, "BoneShapesLibrary.blend"))
 
 def load_icon_preview():
@@ -428,12 +428,24 @@ def ensure_target(obj, source_bone, target_bone, config=None, parent_bone=None, 
         new_bone.tail = eb_src.tail + mathutils.Vector((0, 0, -length))
         new_bone.roll = eb_src.roll
     elif mode == "BALL_ROLL":
-        direction = (eb_src.head - eb_src.tail)
+        mat = eb_src.matrix.to_3x3()
+        local_x = mat.col[0].normalized()
+        local_y = mat.col[1].normalized()
+        local_z = mat.col[2].normalized()
+
+        world_x = mathutils.Vector((1, 0, 0))
+        if abs(local_x.dot(world_x)) >= abs(local_z.dot(world_x)):
+            roll_axis_vec = local_x
+        else:
+            roll_axis_vec = local_z
+
+        direction = -local_y
         direction.z = 0
         direction = direction.normalized()
+
         new_bone.head = eb_src.head
         new_bone.tail = eb_src.head + (direction * length)
-        new_bone.roll = eb_src.roll
+        new_bone.align_roll(roll_axis_vec)
     elif mode == "FOOT_ROLL":
         direction = (eb_ref.head - eb_src.tail)
         direction.z = 0
@@ -528,27 +540,19 @@ def compute_pole_angle(obj, upper_name, end_name, pole_pos_world):
 
     return angle
 
-def detect_roll_axis(obj, toe_name, foot_name):
-    target_bone = obj.data.bones.get(toe_name)
-    dir_bone = obj.data.bones.get(foot_name)
-    forward_vec = target_bone.head - dir_bone.head
-    forward_vec.z = 0
-    forward_vec = forward_vec.normalized()
-    up_vec= mathutils.Vector((0, 0, 1))
-    right_vec = forward_vec.cross(up_vec).normalized()
+def detect_roll_axis(obj, toe_name):
+    toe_bone = obj.data.bones.get(toe_name)
+    world_x = mathutils.Vector((1, 0, 0))
 
-    mat = target_bone.matrix_local.to_3x3()
-
-    local_axis = {
+    mat = toe_bone.matrix_local.to_3x3()
+    local_axes = {
         'x' : mat.col[0].normalized(),
         'y' : mat.col[1].normalized(),
         'z' : mat.col[2].normalized(),
     }
 
-    roll_axis = max(local_axis, key=lambda a: abs(local_axis[a].dot(right_vec)))
-    dot_signed = local_axis[roll_axis].dot(right_vec)
-
-    is_positive = dot_signed > 0
+    roll_axis = max(local_axes, key=lambda a: abs(local_axes[a].dot(world_x)))
+    is_positive = local_axes[roll_axis].dot(world_x) > 0
     return roll_axis, is_positive
 
 def collect_bone_chain(root_pbone):

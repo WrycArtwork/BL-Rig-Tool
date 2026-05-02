@@ -1,5 +1,6 @@
 import difflib
 import json
+import os
 
 import bpy
 import math
@@ -963,10 +964,6 @@ class WRYC_OT_CreateSpineController(bpy.types.Operator):
         spline.points.add(2)
         spline.use_endpoint_u = True
 
-        pelvis_world = target_pelvis.head
-        chest_world = target_chest.head
-        head_world = target_head.head
-
         for i, (pt, pos) in enumerate(zip(spline.points, [target_pelvis.head, target_chest.head, target_head.head])):
             pt.co = (*pos, 1.0)
             pt.weight = 1.0
@@ -1428,16 +1425,14 @@ class WRYC_OT_CreateFingerController(bpy.types.Operator):
             return {'CANCELLED'}
 
         root_name = self.root_bone
+        parent_name = obj.pose.bones.get(root_name).parent.name
 
-        bpy.ops.object.mode_set(mode='EDIT')
-
-        raw_target_name = self.target_bone.strip() if self.target_bone else f"{pref.prefix.target_prefix}{root_name}"
         target = AddonFunctions.ensure_target(
             obj,
             root_name,
-            raw_target_name,
+            f"{pref.prefix.target_prefix}{root_name}",
             "finger_target_shape",
-            None,
+            parent_name,
             False,
         )
 
@@ -1575,6 +1570,9 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
             mode="FOOT_UNDER_FLOOR",
         )
 
+        if target_foot.name == "TB_foot_l":
+            target_foot.custom_shape_rotation_euler[1] *= -1
+
         if self.is_create_toe:
             roll_toe = AddonFunctions.ensure_target(
                 obj,
@@ -1596,7 +1594,7 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
                 False,
                 length=unit * 0.1,
                 mode="FOOT_ROLL",
-                ref_name = toe_name
+                ref_name = roll_toe.name
             )
 
             roll_control = AddonFunctions.ensure_target(
@@ -1675,15 +1673,14 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
         con.owner_space = 'WORLD'
 
         if self.is_create_toe:
-            roll_axis, axis_is_positive = AddonFunctions.detect_roll_axis(obj, toe_name, foot_name)
+            roll_axis, axis_is_positive = AddonFunctions.detect_roll_axis(obj, toe_name)
 
-            is_right_side = foot_pb.head.x < 0
-            if is_right_side == axis_is_positive:
-                toe_min, toe_max = math.radians(-45), math.radians(0)
-                foot_min, foot_max = math.radians(0), math.radians(45)
-            else:
+            if axis_is_positive:
                 toe_min, toe_max = math.radians(0), math.radians(45)
                 foot_min, foot_max = math.radians(-45), math.radians(0)
+            else:
+                toe_min, toe_max = math.radians(-45), math.radians(0)
+                foot_min, foot_max = math.radians(0), math.radians(45)
 
             con = AddonFunctions.get_or_create_constraint(roll_toe, "ROLL - ", 'COPY_ROTATION')
             con.target = obj
@@ -1814,6 +1811,8 @@ class WRYC_OT_CreateMannyController(bpy.types.Operator):
                 continue
 
             shape_config = None
+            mirror_mode = arm.use_mirror_x
+            arm.use_mirror_x = False
 
             if pb.name == "root":
                 shape_config = "root_shape"
@@ -1853,6 +1852,42 @@ class WRYC_OT_CreateMannyController(bpy.types.Operator):
             foot="foot_l", toe="ball_l", leg_length=2, is_create_toe=True)
         bpy.ops.wryc.ot_create_leg_controller('EXEC_DEFAULT',
             foot="foot_r", toe="ball_r", leg_length=2, is_create_toe=True)
+
+        finger_prefixes = ["thumb", "index", "middle", "ring", "pinky"]
+        sides = ["_l", "_r"]
+
+        for side in sides:
+            for root in finger_prefixes:
+                finger_bone_name = f"{root}_01{side}"
+                if finger_bone_name in obj.pose.bones:
+                    bpy.ops.wryc.ot_create_finger_controller('EXEC_DEFAULT', root_bone = finger_bone_name)
+
+        for side in sides:
+            control_meta = AddonFunctions.ensure_target(
+                obj,
+                f"pinky_metacarpal{side}",
+                f"{pref.prefix.control_prefix}pinky_metacarpal{side}",
+                "hand_control_shape",
+                f"hand{side}",
+                False,
+            )
+            for name in finger_prefixes[2:]:
+                pb = obj.pose.bones.get(f"{name}_metacarpal{side}")
+                con = AddonFunctions.get_or_create_constraint(pb,"METACARPAL", 'COPY_ROTATION')
+                con.target = obj
+                con.subtarget = control_meta.name
+                con.use_x = con.use_y = con.use_z = True
+                con.mix_mode = 'BEFORE'
+                con.target_space = 'LOCAL'
+                con.owner_space = 'LOCAL'
+                if name == finger_prefixes[2]:
+                    con.influence = 0.1
+                elif name == finger_prefixes[3]:
+                    con.influence = 0.5
+                elif name == finger_prefixes[4]:
+                    con.influence = 1.0
+
+        arm.use_mirror_x = mirror_mode
 
         bpy.ops.object.mode_set(mode='POSE')
         for pb in obj.pose.bones:
@@ -2179,3 +2214,48 @@ class WRYC_OT_RenameTool(bpy.types.Operator):
 
         self.report({'INFO'}, f"{renamed_count} vertex group names have been renamed")
         return {'FINISHED'}
+
+#__Add Manny__
+class WRYC_OT_AddUE5Manny(bpy.types.Operator):
+    bl_idname = "wryc.ot_add_ue5_manny"
+    bl_label = "UE5 Manny (Simple)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    import_mesh: bpy.props.BoolProperty(
+        name="Include Mesh",
+        default=False
+    )
+
+    def execute(self, context):
+        path = AddonFunctions.get_preferences().assets_folder
+        manny_file= os.path.join(path, "SKM_Manny.blend")
+        target_names = ["SKM_Manny_Simple", "root"]
+        if self.import_mesh:
+            target_names.append("SKM_Manny_Simple_LOD0")
+
+        with bpy.data.libraries.load(manny_file) as (data_from, data_to):
+            data_to.objects = [name for name in data_from.objects if name in target_names]
+
+        new_empty = None
+        new_arm = None
+        new_mesh = None
+
+        for obj in data_to.objects:
+            context.collection.objects.link(obj)
+
+            if "SKM_Manny_Simple" in obj.name:
+                new_empty = obj
+            elif "root" in obj.name:
+                new_arm = obj
+            elif "SKM_Manny_Simple_LOD0" in obj.name:
+                new_mesh = obj
+
+            if new_empty and new_arm:
+                new_arm.parent = new_empty
+
+            if new_mesh and new_arm:
+                new_mesh.parent = new_arm
+
+        self.report({'INFO'}, "UE Manny Imported")
+        return {'FINISHED'}
+

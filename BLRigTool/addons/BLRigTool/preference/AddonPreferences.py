@@ -155,14 +155,14 @@ class GeneralBoneDisplaySettings(PropertyGroup):
         self.pelvis_control_shape.set("Pelvis_0", "THEME09", loc=(0,0,0), rot=(-90,0,0), scale=15)
         self.clavicle_control_shape.set("Clavicle_0", "THEME09", loc=(0,0.1,0.05), rot=(90,0,0), scale=1)
         self.head_control_shape.set("Cross_0", "THEME09", loc=(0,0.25,0), rot=(-90,0,0), scale=0.5)
-        self.foot_control_shape.set("Cross_0", "THEME09", loc=(0,0.2,0), rot=(-90,0,0), scale=0.7)
-        self.ball_control_shape.set("Circle_1", "THEME09", loc=(-0.02,0,0), rot=(0,90,0), scale=1)
+        self.foot_control_shape.set("Cross_0", "THEME09", loc=(0,0.15,0), rot=(-90,0,0), scale=0.7)
+        self.ball_control_shape.set("Circle_1", "THEME09", loc=(0,0,0), rot=(0,90,0), scale=1)
         self.hand_control_shape.set("Paddle_0", "THEME09", loc=(0,0.03,0.01), rot=(90,0,90), scale=1.5)
         #Target
         self.target_shape.set("Ball_0", "THEME01", loc=(0,0,0), rot=(0,0,0), scale=1)
         self.finger_target_shape.set("Circle_2","THEME01", rot=(-90,0,0), scale=0.7)
         self.hand_target_shape.set("Circle_1", "THEME01", rot=(-90,0,0), scale=1.5)
-        self.foot_target_shape.set("Heel_0", "THEME01", rot=(90,0,0), scale=1)
+        self.foot_target_shape.set("Heel_0", "THEME01", rot=(90,90,0), scale=1)
 
         self.is_initialized = True
 
@@ -182,8 +182,8 @@ class WRYCAddonPreferences(AddonPreferences):
     prefix: PointerProperty(type=BonePrefix)
     general: PointerProperty(type=GeneralBoneDisplaySettings)
 
-    bone_shape_folder: StringProperty(
-        name="Bone Shape Folder",
+    assets_folder: StringProperty(
+        name="Assets Folder",
         subtype='DIR_PATH',
         default=os.path.join(os.path.dirname(__file__), "..", "assets"),
     )
@@ -208,7 +208,7 @@ class WRYCAddonPreferences(AddonPreferences):
             self.general.set_defaults()
 
         layout = self.layout
-        layout.prop(self, "bone_shape_folder",text="Bone Shape Folder")
+        layout.prop(self, "assets_folder",text="Assets Folder")
 
         layout = self.layout
         layout.label(text="Generated Bones' Prefix")

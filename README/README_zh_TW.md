@@ -12,9 +12,10 @@
 
 
 ## 自訂骨骼顯示外型:
-![custom display 介面](https://github.com/user-attachments/assets/05b5ac02-17b1-4769-ada5-90c198d39fb3)<br>
+![custom display 介面](https://github.com/user-attachments/assets/db43d8e1-99ac-41ac-b1f4-d1e2ceda68d0)<br>
 ***需先進入姿態模式(Pose Mode)中選中要應用的骨骼。***
 ### 形狀(Shape)
+![Shape 介面](https://github.com/user-attachments/assets/2839f568-a25a-4d11-a525-21115430b37d)<br>
 下拉選擇要應用的形狀。<br>
 ![Shape 選擇](https://github.com/user-attachments/assets/c0ad7e09-9f54-49b4-95ea-a971c702edcf)<br>
 **啟用骨骼長度(Enable Scale bone length):** 使編輯模式中的骨骼長度應用到自訂外型的大小。<br>
@@ -23,11 +24,11 @@
 #### 將外型加入顯示外型庫
 骨骼外型圖標與骨骼外型物件儲存於插件偏好的骨骼外型資料夾(Bone Shape Folder)，預設資料夾路徑為:<br>
 插件位置\BLRigTool\addons\BLRigTool\assets<br>
-![Bone Shape Folder](https://github.com/user-attachments/assets/6f1d5f27-c0db-4ae6-9317-a2e4ea47f97c)<br>
+![Bone Shape Folder](https://github.com/user-attachments/assets/ef193ba3-183a-4ed1-93c4-d7f5216064fd)<br>
 <br>
 如果要更改指定路徑，路徑資料夾中務必包含icons資料夾與BoneShapesLibrary.blend檔案。<br>
 ![Bone Shape Folder 內容](https://github.com/user-attachments/assets/c38f1537-ba94-487a-af14-72bbac9a8db5)<br>
-***請在BoneShapesLibrary.blend中進行自訂顯示外型操作。***<br>
+***請在BoneShapesLibrary.blend中進行自訂顯示外型更改與操作。***<br>
 <br>
 生成圖標的物件請在插件中選擇，不是在物件模式中選中的目標物件<br>
 ![生成 Shape 選擇](https://github.com/user-attachments/assets/f2587441-bccb-4994-b1d1-5c2b376c0add)<br>
@@ -71,12 +72,12 @@
 <br>
 **應用旋轉(Apply Rotation):** 應用骨骼顯示外型的旋轉。<br>
 ### 應用全部(Apply All)
-![Apply All](https://github.com/user-attachments/assets/50fdeb4e-bdf2-44d0-96ff-a5c5cb6a4fac)<br>
+![Apply All](https://github.com/user-attachments/assets/d6f481fa-4afc-4c04-80a2-130da475da58)<br>
 **從所選骨骼複製(Copy From Selected):** 從所選骨骼複製外型資訊。<br> 
 **應用全部(Apply All):** 應用此區塊的所有設置。<br>
 
 ## 生成約束:
-![Generate Constraint 介面](https://github.com/user-attachments/assets/72770331-e808-48c7-98df-b33b7e195bb7)
+![Generate Constraint 介面](https://github.com/user-attachments/assets/9fe39eca-87d3-471e-8154-1c629c9121de)
 ### 移除約束(Remove Constraints)
 **移除約束(Remove Constraints):** 移除所選骨骼的所有約束。<br>
 ### 生成變形骨(Generate Deform Bones)

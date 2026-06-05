@@ -125,7 +125,7 @@ class RenameTool(PropertyGroup):
         name="Rename Mode",
         items=[
             ('FIND_REPLACE', "Find/Replace", "Search and replace"),
-            ('SET_PREFIX_SUFFIX', "Set Prefix Suffix", "Set Prefix/Suffix"),
+            ('SET_PREFIX_SUFFIX', "Set Prefix/Suffix", "Set Prefix/Suffix"),
             ('REMOVE_PREFIX_SUFFIX', "Remove Prefix/Suffix", "Remove Prefix/Suffix"),
         ],
         default='FIND_REPLACE',

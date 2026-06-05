@@ -5,6 +5,7 @@ import os
 import bpy
 import math
 import mathutils
+from requests.packages import target
 
 from ..functions import AddonFunctions
 from ..properties import AddonProperties
@@ -440,19 +441,26 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
     bl_description = "Generate virtual deform bones form active armature"
     bl_options = {'REGISTER', 'UNDO'}
 
-    is_switch_direction: bpy.props.BoolProperty(name="Switch Bones Direction",default=True)
-    switch_direction: bpy.props.EnumProperty(
-        name="Switch Direction",
-        items=[
-            ('X', "X", "X"),
-            ('-X', "-X", "-X"),
-            ('Z', "Z", "Z"),
-            ('-Z', "-Z", "-Z"),
-        ],
-        default='Z'
+    axis_items = [
+        ('X', "X", "X Axis"),
+        ('-X', "-X", "-X Axis"),
+        ('Y', "Y", "Y Axis"),
+        ('-Y', "-Y", "-Y Axis"),
+        ('Z', "Z", "Z Axis"),
+        ('-Z', "-Z", "-Z Axis"),
+    ]
+
+    map_x: bpy.props.EnumProperty(name="X-Axis", items=axis_items, default='X')
+    map_y: bpy.props.EnumProperty(name="Y-Axis", items=axis_items, default='Y')
+    map_z: bpy.props.EnumProperty(name="Z-Axis", items=axis_items, default='Z')
+
+    relation: bpy.props.EnumProperty(
+        name="Relation",
+        items=[('head', "Head", "Use bone head  position"), ('tail', "Tail", "Use bone tail")],
+        default='head'
     )
-    switch_angle: bpy.props.FloatProperty(name="Switch Angle",default=90)
-    def_coll_name: bpy.props.StringProperty(name="Collection Name",default="Deform Bones")
+
+    def_coll_name: bpy.props.StringProperty(name="Collection Name", default="Deform Bones")
 
     def invoke(self, context, event):
         if not AddonFunctions.check_pose_mode(context, self):
@@ -463,22 +471,27 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
         layout = self.layout
         obj = context.object
         if obj and obj.type == 'ARMATURE':
-            layout.prop(self, "is_switch_direction", text="Switch Bones Direction")
-            if self.is_switch_direction:
-                col = layout.column(align=True)
-                split = col.split(factor=0.5)
-                split.label(text="Switch Direction:")
-                split.prop(self, "switch_direction", text="")
-                layout.prop(self, "switch_angle", text="Switch Angle")
-            col = layout.column(align=True)
-            split = col.split(factor=0.5)
-            split.label(text="Deform Collection Name:")
-            split.prop(self, "def_coll_name", text="")
+            box = layout.box()
+            row = box.row(align=True)
+            row.label(text="X-Axis")
+            row.prop(self, "map_x", text="")
+
+            row = box.row(align=True)
+            row.label(text="Y-Axis")
+            row.prop(self, "map_y", text="")
+
+            row = box.row(align=True)
+            row.label(text="Z-Axis")
+            row.prop(self, "map_z", text="")
+
+            layout.separator()
+            layout.prop(self, "relation", text="Position base")
+            layout.prop(self, "def_coll_name", text="Collection Name")
         else:
             layout.label(text="Select an Armature", icon="ERROR")
 
     def execute(self, context):
-        pref = AddonFunctions.get_preferences()
+        prefix = AddonFunctions.get_preferences().prefix.deform_prefix
         obj = context.object
         arm = obj.data
 
@@ -488,75 +501,47 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
 
         selected_names = {pb.name for pb in selected_bones}
 
+        mapping = {
+            'X': self.map_x,
+            'Y': self.map_y,
+            'Z': self.map_z,
+        }
+
         if self.def_coll_name not in arm.collections:
             def_collection = arm.collections.new(self.def_coll_name)
         else:
             def_collection = arm.collections[self.def_coll_name]
 
         bpy.ops.object.mode_set(mode='EDIT')
-        edit_bones = arm.edit_bones
 
         bone_map = {}
 
-        for orig_bone in arm.bones:
-            if orig_bone.name not in selected_names:
-                continue
+        for orig_bone in selected_bones:
+            def_name = prefix + orig_bone.name
 
-            if not orig_bone.use_deform:
-                continue
+            pb = obj.pose.bones.get(orig_bone.name)
 
-            eb = edit_bones.get(orig_bone.name)
-            if not eb:
-                self.report({'ERROR'}, f"Can not find bone for {orig_bone.name}")
-                continue
+            parent_name = ""
+            if orig_bone.parent and orig_bone.parent.name in selected_names:
+                parent_name = prefix + orig_bone.parent.name
 
-            def_name = pref.deform_prefix + orig_bone.name
-            new_bone = edit_bones.new(def_name)
+            created_name = AddonFunctions.create_deform_bone(
+                obj=obj,
+                target_pb=pb,
+                matrix_pb=pb,
+                def_bone_name=def_name,
+                mapping=mapping,
+                relation=self.relation,
+                parent_name=parent_name
+            )
 
-            new_bone.head = eb.head.copy()
-            new_bone.tail = eb.tail.copy()
-            new_bone.roll = eb.roll
-
-            if self.is_switch_direction:
-                if self.switch_direction == 'X':
-                    axis_local = mathutils.Vector((1, 0, 0))
-                elif self.switch_direction == '-X':
-                    axis_local = mathutils.Vector((-1, 0, 0))
-                elif self.switch_direction == 'Z':
-                    axis_local = mathutils.Vector((0, 0, 1))
-                elif self.switch_direction == '-Z':
-                    axis_local = mathutils.Vector((0, 0, -1))
-
-                axis_world = new_bone.matrix.to_3x3() @ axis_local
-                axis_world.normalize()
-
-                vec = new_bone.tail - new_bone.head
-
-                angle_radians = math.radians(self.switch_angle)
-                rotate = mathutils.Matrix.Rotation(angle_radians, 4, axis_world)
-
-                new_bone.tail = new_bone.head + rotate @ vec
-
-            new_bone.use_deform = False
-            new_bone.use_connect = False
-
-            def_collection.assign(new_bone)
-
-            bone_map[orig_bone.name] = def_name
-
-        for orig_name, def_name in bone_map.items():
-            orig_bone = arm.bones[orig_name]
-            def_bone = edit_bones[def_name]
-
-            if orig_bone.parent and orig_bone.parent.name in bone_map:
-                def_bone.parent = edit_bones[bone_map[orig_bone.parent.name]]
-            else:
-                def_bone.parent = None
+            bone_map[orig_bone.name] = created_name
 
         bpy.ops.object.mode_set(mode='POSE')
 
         for orig_name, def_name in bone_map.items():
             def_pb = obj.pose.bones.get(def_name)
+            def_collection.assign(def_pb)
 
             if def_pb:
                 con = AddonFunctions.get_or_create_constraint(def_pb, "DEFORM - ", 'LIMIT_LOCATION')

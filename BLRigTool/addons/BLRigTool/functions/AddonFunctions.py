@@ -342,6 +342,7 @@ def create_deform_bone(obj, target_pb, matrix_pb, def_bone_name, mapping, relati
     new_bone.matrix = mathutils.Matrix.LocRotScale(bone_head_pos, target_rot_matrix, None)
     new_bone.length = bone_length
 
+    new_bone.use_deform = False
     new_bone.use_connect = False
     if parent_name and parent_name in arm.edit_bones:
         new_bone.parent = arm.edit_bones[parent_name]

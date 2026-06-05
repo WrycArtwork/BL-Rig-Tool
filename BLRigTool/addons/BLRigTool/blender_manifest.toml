@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "BLRigTool"
-version = "0.0.6"
+version = "0.0.7"
 name = "BL Rig Tool"
-tagline = "Rig tool for Blender. include Custom Display Shape, Generate Constraint(Exp), Rename Tool, Export to Unreal"
+tagline = "Rig tool for Blender. include Custom Display Shape, Generate Constraint, Retarget Action, Rename Tool."
 maintainer = "WRYC <wryc.artwork@gmail.com>"
 type = "add-on"
 tags = ["Animation", "Sequencer"]

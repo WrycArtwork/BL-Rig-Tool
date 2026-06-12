@@ -436,9 +436,9 @@ def ensure_target(obj, source_bone, target_bone, config=None, parent_bone=None, 
 
         world_x = mathutils.Vector((1, 0, 0))
         if abs(local_x.dot(world_x)) >= abs(local_z.dot(world_x)):
-            roll_axis_vec = local_x
-        else:
             roll_axis_vec = local_z
+        else:
+            roll_axis_vec = world_x
 
         direction = -local_y
         direction.z = 0

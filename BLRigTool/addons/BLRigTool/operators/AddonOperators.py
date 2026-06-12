@@ -1609,7 +1609,7 @@ class WRYC_OT_CreateLegController(bpy.types.Operator):
             calf_name,
             f"{pref.prefix.gizmo_prefix}{foot_name}",
             "gizmo_shape",
-            parent_bone = roll_foot.name if self.is_create_toe else "",
+            parent_bone = roll_foot.name if self.is_create_toe else target_foot.name,
             use_connect= False,
             mode="FOOT_TO_FLOOR"
         )

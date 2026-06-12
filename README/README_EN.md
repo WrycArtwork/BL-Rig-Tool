@@ -168,6 +168,6 @@ The left side shows the source bones, and the right side shows the target bones.
 **Apply Mapping to Actions:** Apply the target bone names from the bone mapping list to the actions selected in the previous step.<br>
 
 ## Rename Tool:
-![Rename Tool Interface](https://github.com/user-attachments/assets/3376cb1c-5b4d-4fa4-bcdb-950a54a50e5)<br>
+![Rename Tool Interface](https://github.com/user-attachments/assets/3376cb1c-5b4d-4fa4-bcdb-b50ab54a50e5)<br>
 **Target:** Can select Vertex Group or Shape Key for renaming.<br>
 **Rename Mode:** Can select Find/Replace, Set Prefix/Suffix, Remove Prefix/Suffix.<br>

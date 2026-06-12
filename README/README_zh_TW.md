@@ -74,23 +74,78 @@
 ## 生成約束:
 ![Generate Constraint 介面](https://github.com/user-attachments/assets/9fe39eca-87d3-471e-8154-1c629c9121de)
 ### 移除約束(Remove Constraints)
+![Remove Constraints 介面](https://github.com/user-attachments/assets/9e12e976-1add-44a3-a266-20264019e098)<br>
 **移除約束(Remove Constraints):** 移除所選骨骼的所有約束。<br>
 ### 生成變形骨(Generate Deform Bones)
+![Generate Deform Bones](https://github.com/user-attachments/assets/1dd29f81-4c0e-47cf-8b63-53ae11f9b2ec)<br>
 某些DCC的骨骼軸向不同，這個功能可以幫助生成對應軸向的骨骼，或使用已有的軸向不同骨架綁定至Blender軸向骨架控制。<br>
 生成的為虛擬變形骨，不會勾選變形選項，模型依然由Blender軸向骨骼進行控制，輸出時要轉換為變形骨時請使用BL-Export-to Unreal，勾選Use Virtul Deform。<br>
+建議可以先把骨骼體綁定在角色身上完成調適後再進行虛擬變形骨的生成。<br>
 <br>
 **生成變形骨(Generate Deform):** 為選中的骨骼生成對應軸向的變形骨。<br>
+![Generate Deform 介面](https://github.com/user-attachments/assets/122f4d03-7790-4b7d-bc10-ec4fde88f265)<br>
+>**XYZ-Axis:** 選擇生成骨骼的軸向對應。<br>
+>**生成位置(Position Base):** 選擇生成骨骼的生成位置，可以選擇在源骨骼的根部或是尾部。<br>
+>**群組名稱(Collection Name):** 自訂右方Data>Bone Collections的群組名稱。<br>
+>EX:<br>
+>![Generate Deform 示例](https://github.com/user-attachments/assets/46e50dcc-68f1-46e3-8259-f529a27b247a)<br>
+>X對應Y，Y對應X，Z對應-Z，在原骨骼根部生成。<br>
+
 **UE5角色變形骨(UE5 Manny Deform):** 選中骨架為UE5骨架或是骨骼名稱與UE5預設Manny骨架相同，則會為有對應的骨骼生成變形骨。(僅限Manny_Simple)<br>
+>可以在物體模式(Object Mode)從Add>Armature>Add UE5 Manny(Simple)加入整理好的骨骼體。<br>
+>![Add UE5 Manny 介面](https://github.com/user-attachments/assets/ee825568-fad0-4c80-9ffb-b6f6d3adc941)<br>
+>接著進入姿態模式(Pose Mode)按下UE5 Manny Deform。<br>
+>![UE5 Manny Deform 示例](https://github.com/user-attachments/assets/dc65dfaf-8354-4bc5-b0ca-c8035fb7bf09)<br>
+>建議使用整理好的骨骼體或相同軸向與設定的骨骼體，才能生成完全對應UE5 Manny的虛擬變形骨。<br>
+
 **連結變形骨骨架(Connect Deform Armature):** 將另一個DCC匯入且沒有進行軸向轉換的骨架，作為變形骨連結到在Blender中進行過軸向整理的骨架上。<br>
+![Connect Deform Armature 介面](https://github.com/user-attachments/assets/b337c71c-c416-4fb8-9d0e-942116585003)<br>
+>![Connect Deform Armature 示例1](https://github.com/user-attachments/assets/6aecf963-1952-4d29-8717-5a7927da4c9e)<br>
+>![Connect Deform Armature 示例2](https://github.com/user-attachments/assets/6eb8c391-81d6-42bc-ba0d-8bf744476b85)<br>
+
 **全部設置反向(Set Inverse All):** 為所有選中的變形骨裡的 Child Of 約束執行設定反向。當動畫播放時變形骨沒有正確的鎖定在正確位置上時，請將骨架設為靜止位置(Rest Position)後選中變形骨執行此功能。<br>
 
 ### 生成約束(Generate Constraints)
+![Generate Constraints 生成約束](https://github.com/user-attachments/assets/163ce372-7c34-4702-a3d2-909c81e21c82)<br>
 **頭部(Head):** <br>
+>![Head 介面](https://github.com/user-attachments/assets/1265137e-a29e-424b-86fe-6845852516f5)<br>
+>![Head 結果](https://github.com/user-attachments/assets/d77262a1-0d40-4f7a-a456-428fa08435f9)<br>
+>胸部(Chest)為脖子下方的骨骼。<br>
+
 **脊椎(Spine):** <br>
+>![Spine 介面](https://github.com/user-attachments/assets/bfd76906-ca80-4bc4-ba82-8d5adf5c63be)<br>
+>![Spine 結果](https://github.com/user-attachments/assets/779a1955-4e5a-4417-977e-ffa3d8017e7d)<br>
+
 **手臂(Arm):** <br>
+>![Arm 介面](https://github.com/user-attachments/assets/8eb0919e-19ee-49fa-a172-c6f97a914329)<br>
+>![Arm 結果](https://github.com/user-attachments/assets/716fe8a2-5fd5-4565-9976-c9e25766db04)<br>
+>手臂長度(Arm Length)為手掌上方骨骼的數量。<br>
+
 **腿部(Leg):** <br>
+>![Leg 介面](https://github.com/user-attachments/assets/e1780c62-88d7-4fc1-a536-ce78ae005ffe)<br>
+>![Leg 結果](https://github.com/user-attachments/assets/fa28755d-4528-49f2-9084-8a7d3a851cfd)<br>
+>腿部長度(Leg Length)為腳掌上方骨骼的數量。<br>
+>是否生成腳趾(Is Create Toe)不勾選則不生成腳趾約束與控制器，適合沒有腳趾的骨骼體。<br>
+
 **手指(Finger):** <br>
+>![Finger 介面](https://github.com/user-attachments/assets/85a807ae-1bda-4470-8a57-c795975de7f4)<br>
+>![Finger 結果](https://github.com/user-attachments/assets/6497c80b-0282-4d28-9e1f-c2cb2840c8f5)<br>
+>根骨骼(Root Bone)選擇手指最上方的骨骼。<br>
+>除了用來生成手指，也可以用來生成尾巴等長條狀部位。<br>
+
 **UE5 角色(UE5 Manny):** <br>
+>![UE5 Manny 結果](https://github.com/user-attachments/assets/cd5fe69a-9a12-41d5-87c7-620ad9e1acef)<br>
+>為名稱與UE5 Manny(Simple)相同的骨骼生成控制器。<br>
+>可以適當的關閉一些骨骼群組，只留下主要的控制器。<br>
+>![UE5 Manny Collection 介面](https://github.com/user-attachments/assets/729ff6f7-324d-432e-8ef1-9945c2bfbf4e)<br>
+>![UE5 Manny 簡化](https://github.com/user-attachments/assets/296da51f-5aaf-413e-82f0-5fad727b75c9)<br>
+
+**生成骨骼前綴與外型設定:**
+>可以透過插件的偏好設定(Preferences)，生成骨骼前綴(Generated Bonee's Prefix)，為不同類型的生成骨骼設定前綴。<br>
+>以及一般骨骼外型設定(General Bone Display Settings)設定個別類型骨骼的生成外型。<br>
+>![Preferences Prefix 介面](https://github.com/user-attachments/assets/97055744-7d85-451a-ad0b-3e23cd7f969b)<br>
+>![Preferences Display 介面](https://github.com/user-attachments/assets/21a7383d-d670-4286-a8b1-05ec5e527482)<br>
+
 ## 動作重定向:
 ![Retarget Actions 介面](https://github.com/user-attachments/assets/b58710b8-3e7f-4bd6-8f94-ac57f3e87a93)<br>
 ### 重定向來源/目標設定(Mapping Source/Target Settings)
@@ -106,7 +161,6 @@
 **匯入(Import)/匯出(Export):** 匯入或匯出重定向對應清單的json檔，方便跨檔案進行相似骨架的重定向。<br>
 **選擇要進行重定向的動作(Select Mapping Actions):** 選擇要進行重定向的動作，動作的骨骼名稱將從來源名稱改成對應清單上右側的目標名稱。<br>
 **應用骨骼對應到所選動作(Apply Mapping to Actions):** 將骨骼對應清單上的目標骨骼名稱應用在上個操作選中的動作上。<br>
-
 
 ## 重命名工具:
 ![Rename Tool 介面](https://github.com/user-attachments/assets/3376cb1c-5b4d-4fa4-bcdb-b50ab54a50e5)<br>

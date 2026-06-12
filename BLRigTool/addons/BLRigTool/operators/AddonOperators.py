@@ -334,7 +334,7 @@ class WRYC_OT_ConnectDeformArmature(bpy.types.Operator):
 
     def execute(self, context):
         settings = context.scene.deform_settings
-        pref = AddonFunctions.get_preferences()
+        pref = AddonFunctions.get_preferences().prefix.deform_prefix
 
         def_obj = settings.src_obj
         tgt_obj = settings.tgt_obj
@@ -357,7 +357,7 @@ class WRYC_OT_ConnectDeformArmature(bpy.types.Operator):
 
         for src_bone in def_arm.bones:
             src_name = src_bone.name
-            def_name = f"{pref.deform_prefix}{src_name}"
+            def_name = f"{pref}{src_name}"
 
             if src_name not in tgt_arm.bones:
                 continue
@@ -381,7 +381,7 @@ class WRYC_OT_ConnectDeformArmature(bpy.types.Operator):
 
         for src_bone in def_arm.bones:
             src_name = src_bone.name
-            def_name = f"{pref.deform_prefix}{src_name}"
+            def_name = f"{pref}{src_name}"
 
             if def_name not in tgt_arm.edit_bones:
                 continue
@@ -390,7 +390,7 @@ class WRYC_OT_ConnectDeformArmature(bpy.types.Operator):
 
             if src_bone.parent:
                 parent_name = src_bone.parent.name
-                def_parent_name = f"{pref.deform_prefix}{parent_name}"
+                def_parent_name = f"{pref}{parent_name}"
 
                 if def_parent_name in tgt_arm.edit_bones:
                     def_bone.parent = tgt_arm.edit_bones[def_parent_name]
@@ -398,7 +398,7 @@ class WRYC_OT_ConnectDeformArmature(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='POSE')
 
         for tgt_name in def_bones:
-            def_name = f"{pref.deform_prefix}{tgt_name}"
+            def_name = f"{pref}{tgt_name}"
 
             if tgt_name not in tgt_obj.pose.bones:
                 continue
@@ -485,7 +485,7 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
             row.prop(self, "map_z", text="")
 
             layout.separator()
-            layout.prop(self, "relation", text="Position base")
+            layout.prop(self, "relation", text="Position Base")
             layout.prop(self, "def_coll_name", text="Collection Name")
         else:
             layout.label(text="Select an Armature", icon="ERROR")

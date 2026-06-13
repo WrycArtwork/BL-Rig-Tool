@@ -51,7 +51,7 @@
 <br>
 如果要更改指定路径，路径资料夹中务必包含icons资料夹与BoneShapesLibrary.blend档案。<br>
 ![Bone Shape Folder 内容](https://github.com/user-attachments/assets/c38f1537-ba94-487a-af14-72bbac9a8db5)<br>
-***请在BoneShapesLibrary.blend中进行自订显示外型更改与操作。***<br>
+***请在BoneShapesLibrary.blend中进行自订显示外型更改与添加，存档后，在另一个Blend档中进行生成操作***<br>
 <br>
 要生成图标的物件请在插件中选择，不是在物件模式中选中的目标物件<br>
 ![生成 Shape 选择](https://github.com/user-attachments/assets/f2587441-bccb-4994-b1d1-5c2b376c0add)<br>

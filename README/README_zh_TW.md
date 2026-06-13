@@ -51,7 +51,7 @@
 <br>
 如果要更改指定路徑，路徑資料夾中務必包含icons資料夾與BoneShapesLibrary.blend檔案。<br>
 ![Bone Shape Folder 內容](https://github.com/user-attachments/assets/c38f1537-ba94-487a-af14-72bbac9a8db5)<br>
-***請在BoneShapesLibrary.blend中進行自訂顯示外型更改與操作。***<br>
+***請在BoneShapesLibrary.blend中進行自訂顯示外型更改與添加，存檔後，在另一個Blend檔中進行生成操作***<br>
 <br>
 要生成圖標的物件請在插件中選擇，不是在物件模式中選中的目標物件<br>
 ![生成 Shape 選擇](https://github.com/user-attachments/assets/f2587441-bccb-4994-b1d1-5c2b376c0add)<br>

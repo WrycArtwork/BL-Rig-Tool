@@ -125,7 +125,7 @@ def generate_icon(self, context, distance, angle, keep_generated):
     original_camera = scene.camera
 
     scene.render.filepath = icon_file
-    scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    scene.render.engine = AddonUtils.Compat.render_engine_eevee()
     scene.render.film_transparent = True
     scene.render.resolution_x = 128
     scene.render.resolution_y = 128

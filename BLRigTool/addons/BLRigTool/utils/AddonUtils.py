@@ -23,3 +23,11 @@ class Compat:
             for b in action.bindings:
                 collection.append(b.fcurves)
         return collection
+
+    @staticmethod
+    def render_engine_eevee():
+        version = bpy.app.version
+        if version >= (5, 0, 0):  # Blender 5.0+
+            return 'BLENDER_EEVEE'
+        else:  # Blender 4.0+
+            return 'BLENDER_EEVEE_NEXT'

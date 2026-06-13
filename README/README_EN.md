@@ -51,7 +51,7 @@ Add-on Location\BLRigTool\addons\BLRigTool\assets<br>
 <br>
 If you wish to change the specified path, the folder must contain an "icons" folder and the "BoneShapesLibrary.blend" file.<br>
 ![Bone Shape Folder Contents](https://github.com/user-attachments/assets/c38f1537-ba94-487a-af14-72bbac9a8db5)<br>
-***Custom display shape modifications and operations should be performed within BoneShapesLibrary.blend.***<br>
+***Customize and add custom shapes in BoneShapesLibrary.blend, save it, and then run the generation in another Blend file.***<br>
 <br>
 To generate icons for an object, select it within the add-on, not as a target object selected in Object Mode.<br>
 ![Generate Shape Selection](https://github.com/user-attachments/assets/f2587441-bccb-4994-b1d1-5c2b376c0add)<br>

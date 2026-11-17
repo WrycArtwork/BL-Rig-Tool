@@ -84,6 +84,7 @@ class WRYC_PT_GenerateConstraint(BasePanel, bpy.types.Panel):
         layout.label(text="Generate Deform Bones")
         layout.operator("wryc.ot_create_deform_bones")
         layout.operator("wryc.ot_create_manny_deform_bones")
+        layout.operator("wryc.ot_manny_to_blender_bones")
         layout.operator("wryc.ot_connect_deform_armature")
         layout.operator("wryc.ot_set_inverse_all_child_of")
 
@@ -150,29 +151,59 @@ class WRYC_PT_RetargetActions(BasePanel, bpy.types.Panel):
         layout.operator("wryc.ot_apply_mapping_to_actions")
 
 @reg_order(3)
-class WRYC_PT_RenameTool(BasePanel, bpy.types.Panel):
-    bl_label = "Rename Tool"
-    bl_idname = "WRYC_PT_rename_tool"
+class WRYC_PT_OtherTools(BasePanel, bpy.types.Panel):
+    bl_label = "Other Tools"
+    bl_idname = "WRYC_PT_other_tools"
 
     def draw(self, context):
         layout = self.layout
-        settings = context.scene.rename_tool
-        layout.label(text="Replace Name")
+        settings = context.scene.other_tools
 
-        layout.prop(settings, "rename_target")
-        layout.prop(settings, "rename_mode")
+        row = layout.row()
+        row.prop(settings, "show_rename_tool", text="", icon='TRIA_DOWN' if settings.show_rename_tool else 'TRIA_RIGHT', emboss=False)
+        row.label(text="Replace Name")
+        if settings.show_rename_tool:
+            layout.prop(settings, "rename_target")
+            layout.prop(settings, "rename_mode")
 
-        if settings.rename_mode == 'FIND_REPLACE':
-            layout.prop(settings, "find_str")
-            layout.prop(settings, "replace_str")
-        elif settings.rename_mode == 'SET_PREFIX_SUFFIX':
-            layout.prop(settings, "prefix_str")
-            layout.prop(settings, "suffix_str")
-        elif settings.rename_mode == 'REMOVE_PREFIX_SUFFIX':
-            layout.prop(settings, "prefix_str")
-            layout.prop(settings, "suffix_str")
+            if settings.rename_mode == 'FIND_REPLACE':
+                layout.prop(settings, "find_str")
+                layout.prop(settings, "replace_str")
+            elif settings.rename_mode == 'SET_PREFIX_SUFFIX':
+                layout.prop(settings, "prefix_str")
+                layout.prop(settings, "suffix_str")
+            elif settings.rename_mode == 'REMOVE_PREFIX_SUFFIX':
+                layout.prop(settings, "prefix_str")
+                layout.prop(settings, "suffix_str")
 
-        layout.operator("wryc.ot_rename_tool")
+            layout.operator("wryc.ot_rename_tool")
+
+        row = layout.row()
+        row.prop(settings, "show_remove_unused_vertex_groups", text="", icon='TRIA_DOWN' if settings.show_remove_unused_vertex_groups else 'TRIA_RIGHT', emboss=False)
+        row.label(text="Remove Unused Vertex Groups")
+        if settings.show_remove_unused_vertex_groups:
+            layout.operator("wryc.ot_remove_unused_vertex_groups")
+
+
+        row = layout.row()
+        row.prop(settings, "show_weight_transfer", text="", icon='TRIA_DOWN' if settings.show_weight_transfer else 'TRIA_RIGHT', emboss=False)
+        row.label(text="Transfer Weights")
+        if settings.show_weight_transfer:
+            layout.prop(settings, "weight_source_object")
+
+            layout.operator("wryc.ot_weight_transfer")
+
+        row = layout.row()
+        row.prop(settings, "show_write_color_attributes", text="", icon = 'TRIA_DOWN' if settings.show_write_color_attributes else 'TRIA_RIGHT', emboss=False)
+        row.label(text="Write Colors Attributes")
+        if settings.show_write_color_attributes:
+            layout.prop(settings, "target_attribute_name")
+            layout.prop(settings, "source_r_name")
+            layout.prop(settings, "source_g_name")
+            layout.prop(settings, "source_b_name")
+            layout.prop(settings, "source_a_name")
+
+            layout.operator("wryc.ot_write_color_attributes")
 
 #__RETARGET LIST__
 class UI_UL_list(bpy.types.UIList):

@@ -3,7 +3,7 @@ import bpy
 from .config import __addon_name__
 from .functions.AddonFunctions import load_icon_preview, get_preferences
 from .i18n.dictionary import dictionary
-from .properties.AddonProperties import BoneDisplaySettings, RenameTool, BoneMappingSettings, \
+from .properties.AddonProperties import BoneDisplaySettings, OtherTools, BoneMappingSettings, \
     DeformSettings
 from ...common.class_loader import auto_load
 from ...common.class_loader.auto_load import add_properties, remove_properties
@@ -14,8 +14,8 @@ bl_info = {
     "name": "BL Rig Tool",
     "author": "WRYC",
     "blender": (4, 0, 2),
-    "version": (0, 1, 0),
-    "description": "Rig tool for Blender. include Custom Display Shape, Generate Constraint, Retarget Action, Rename Tool.",
+    "version": (0, 1, 1),
+    "description": "Rig tool for Blender. include Custom Display Shape, Generate Constraint, Retarget Action, Other Tools.",
     "doc_url": "https://github.com/WrycArtwork/BL-Rig-Tool",
     "category": "Rigging"
 }
@@ -23,7 +23,7 @@ bl_info = {
 _addon_properties = {
      bpy.types.Scene: {
          "bone_display_settings": bpy.props.PointerProperty(type=BoneDisplaySettings),
-         "rename_tool": bpy.props.PointerProperty(type=RenameTool),
+         "other_tools": bpy.props.PointerProperty(type=OtherTools),
          "bone_mapping_settings": bpy.props.PointerProperty(type=BoneMappingSettings),
          "deform_settings": bpy.props.PointerProperty(type=DeformSettings),
      },

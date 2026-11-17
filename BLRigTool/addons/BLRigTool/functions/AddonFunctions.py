@@ -1,14 +1,11 @@
 import difflib
 import math
-from email.policy import default
 
 import bpy
 import os
 import mathutils
 
 from bpy.utils import previews
-from numpy.lib.utils import source
-from numpy.matrixlib.defmatrix import matrix
 
 from ..config import __addon_name__
 from ..utils import AddonUtils
@@ -427,7 +424,7 @@ def ensure_target(obj, source_bone, target_bone, config=None, parent_bone=None, 
     elif mode == "FOOT_UNDER_FLOOR":
         new_bone.head = eb_src.tail
         new_bone.tail = eb_src.tail + mathutils.Vector((0, 0, -length))
-        new_bone.roll = eb_src.roll
+        new_bone.roll = 0
     elif mode == "BALL_ROLL":
         mat = eb_src.matrix.to_3x3()
         local_x = mat.col[0].normalized()

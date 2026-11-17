@@ -43,14 +43,14 @@ class BoneDisplaySettings(PropertyGroup):
     rot_z: FloatProperty(name="Rotate Z", default=0.0)
 
 #__GENERATE CONSTRAINTS__
-class DeformSettings(bpy.types.PropertyGroup):
-    src_obj: bpy.props.PointerProperty(
+class DeformSettings(PropertyGroup):
+    src_obj: PointerProperty(
         name="Source Armature",
         type=bpy.types.Object,
         poll=lambda self, obj: obj.type == 'ARMATURE'
     )
 
-    tgt_obj: bpy.props.PointerProperty(
+    tgt_obj: PointerProperty(
         name="Target Armature",
         type=bpy.types.Object,
         poll=lambda self, obj: obj.type == 'ARMATURE'
@@ -110,8 +110,11 @@ class BoneMappingSettings(PropertyGroup):
     def set_last_path(self, path):
         self.last_path = path
 
-#__RENAME TOOL__
-class RenameTool(PropertyGroup):
+#__OTHER TOOLS__
+class OtherTools(PropertyGroup):
+    #Rename Tool
+    show_rename_tool: BoolProperty(default=False)
+
     rename_target: EnumProperty(
         name="Target",
         items=[
@@ -134,3 +137,27 @@ class RenameTool(PropertyGroup):
     replace_str: StringProperty(name="Replace", default="")
     prefix_str: StringProperty(name="Prefix", default="")
     suffix_str: StringProperty(name="Suffix", default="")
+
+    #Weight Transfer
+    show_weight_transfer: BoolProperty(default=False)
+
+    weight_source_object: PointerProperty(
+        name="Source Mesh",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'MESH'
+    )
+
+
+
+    #Show Remove Unused Vertex Groups
+    show_remove_unused_vertex_groups: BoolProperty(default=False)
+
+    #Write Color Attributes
+    show_write_color_attributes: BoolProperty(default=False)
+
+    target_attribute_name: StringProperty(name="Target", description="Target color attribute name.", default="")
+
+    source_r_name: StringProperty(name="R", description="Red channel color attribute name.", default="")
+    source_g_name: StringProperty(name="G", description="Green channel color attribute name.", default="")
+    source_b_name: StringProperty(name="B", description="Blue channel color attribute name.", default="")
+    source_a_name: StringProperty(name="A", description="Alpha channel color attribute name.", default="")

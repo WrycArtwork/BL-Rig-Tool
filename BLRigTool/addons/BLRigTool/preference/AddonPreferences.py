@@ -162,7 +162,7 @@ class GeneralBoneDisplaySettings(PropertyGroup):
         self.target_shape.set("Ball_0", "THEME01", loc=(0,0,0), rot=(0,0,0), scale=1)
         self.finger_target_shape.set("Circle_2","THEME01", rot=(-90,0,0), scale=0.7)
         self.hand_target_shape.set("Circle_1", "THEME01", rot=(-90,0,0), scale=1.5)
-        self.foot_target_shape.set("Heel_0", "THEME01", rot=(90,90,0), scale=1)
+        self.foot_target_shape.set("Heel_0", "THEME01", rot=(90,0,0), scale=1)
 
         self.is_initialized = True
 

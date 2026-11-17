@@ -1,15 +1,18 @@
 import difflib
 import json
 import os
+from operator import truediv
 
 import bpy
 import math
 import mathutils
-from requests.packages import target
+import numpy as np
 
 from ..functions import AddonFunctions
 from ..properties import AddonProperties
 from ..utils import AddonUtils
+
+from mathutils import Matrix, Quaternion, Vector
 
 #__CUSTOM DISPLAY SHAPE__
 class WRYC_OT_GenerateShapeIcon(bpy.types.Operator):
@@ -233,7 +236,8 @@ class WRYC_OT_CopySelectedBoneDisplayConfig(bpy.types.Operator):
         armature = context.active_object
 
         if pbone.custom_shape:
-            settings.bone_shape = pbone.custom_shape.name
+            settings.bone_shape = pbone.custom_shape.name.split(".")[0]
+
 
         settings.scale_bone_length_enable = pbone.use_custom_shape_bone_size
 
@@ -512,6 +516,8 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
         else:
             def_collection = arm.collections[self.def_coll_name]
 
+        def_collection.is_visible = True
+
         bpy.ops.object.mode_set(mode='EDIT')
 
         bone_map = {}
@@ -522,7 +528,7 @@ class WRYC_OT_CreateDeformBones(bpy.types.Operator):
             pb = obj.pose.bones.get(orig_bone.name)
 
             parent_name = ""
-            if orig_bone.parent and orig_bone.parent.name in selected_names:
+            if orig_bone.parent and orig_bone.parent.name:
                 parent_name = prefix + orig_bone.parent.name
 
             created_name = AddonFunctions.create_deform_bone(
@@ -634,7 +640,7 @@ class WRYC_OT_CreateMannyDeformBones(bpy.types.Operator):
             ("middle_03_l", "middle_03_l", left_hand_right_leg_mapping, 'head'),
             ("ring_metacarpal_l", "ring_metacarpal_l", left_hand_right_leg_mapping, 'head'),
             ("ring_01_l", "ring_01_l", left_hand_right_leg_mapping, 'head'),
-            ("ring_02_l", "ring_01_l", left_hand_right_leg_mapping, 'head'),
+            ("ring_02_l", "ring_02_l", left_hand_right_leg_mapping, 'head'),
             ("ring_03_l", "ring_03_l", left_hand_right_leg_mapping, 'head'),
             ("pinky_metacarpal_l", "pinky_metacarpal_l", left_hand_right_leg_mapping, 'head'),
             ("pinky_01_l", "pinky_01_l", left_hand_right_leg_mapping, 'head'),
@@ -752,6 +758,14 @@ class WRYC_OT_CreateMannyDeformBones(bpy.types.Operator):
 
         self.report({'INFO'}, "Generated UE5 Manny deform bones.")
         return {'FINISHED'}
+
+'''class WRYC_OT_MannyToBlenderBones(bpy.types.Operator):
+    bl_idname = "wryc.ot_manny_to_blender_bones"
+    bl_label = "Manny To Blender Bones"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):'''
+
 
 class WRYC_OT_SetInverseAllChildOf(bpy.types.Operator):
     bl_idname = "wryc.ot_set_inverse_all_child_of"
@@ -2193,14 +2207,14 @@ class WRYC_OT_BoneMappingImport(bpy.types.Operator):
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
 
-#__RENAME TOOL__
+#__OTHER TOOLS__
 class WRYC_OT_RenameTool(bpy.types.Operator):
     bl_idname = "wryc.ot_rename_tool"
-    bl_label = "Apply "
+    bl_label = "Apply"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        props = context.scene.rename_tool
+        props = context.scene.other_tools
         target = props.rename_target
         mode = props.rename_mode
         renamed_count = 0
@@ -2250,6 +2264,165 @@ class WRYC_OT_RenameTool(bpy.types.Operator):
         self.report({'INFO'}, f"{renamed_count} vertex group names have been renamed")
         return {'FINISHED'}
 
+class WRYC_OT_WeightTransfer(bpy.types.Operator):
+    bl_idname = "wryc.ot_weight_transfer"
+    bl_label = "Apply"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.other_tools
+        source = props.weight_source_object
+
+        targets = [obj for obj in context.selected_objects if obj.type == 'MESH' and obj != source]
+
+        if not targets:
+            self.report({'ERROR'}, "No target mesh selected")
+            return {'CANCELLED'}
+
+        for target in targets:
+            context.view_layer.objects.active = target
+            mod_name = "WeightTransfer"
+            mod = target.modifiers.new(mod_name, 'DATA_TRANSFER')
+
+            mod.object = source
+            mod.use_vert_data = True
+            mod.data_types_verts = {'VGROUP_WEIGHTS'}
+            mod.vert_mapping = 'POLYINTERP_NEAREST'
+
+            bpy.ops.object.datalayout_transfer(modifier=mod_name)
+            bpy.ops.object.modifier_apply(modifier=mod_name)
+
+        self.report({'INFO'}, f"Weight Transfer has been applied")
+        return {'FINISHED'}
+
+class WRYC_OT_RemoveUnusedVertexGroups(bpy.types.Operator):
+    bl_idname = "wryc.ot_remove_unused_vertex_groups"
+    bl_label = "Apply"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if not selected_meshes:
+            self.report({'ERROR'}, "Please selected Mesh Object")
+            return {'CANCELLED'}
+
+        threshold = 0.0001
+
+        for obj in selected_meshes:
+            armature_bones = set()
+            for modifier in obj.modifiers:
+                if modifier.type == 'ARMATURE' and modifier.object and modifier.object.data:
+                    armature_bones.update(b.name for b in modifier.object.data.bones)
+
+            if not armature_bones:
+                continue
+
+            valid_groups = set()
+            for vert in obj.data.vertices:
+                for g in vert.groups:
+                    if g.weight > threshold:
+                        valid_groups.add(g.group)
+
+            groups_to_remove = [
+                vg for vg in obj.vertex_groups
+                if (vg.name not in armature_bones) or (vg.index not in valid_groups)
+            ]
+
+            for vg in groups_to_remove:
+                obj.vertex_groups.remove(vg)
+
+        self.report({'INFO'}, f"Removed {len(groups_to_remove)} unused vertex groups")
+        return {'FINISHED'}
+
+
+class WRYC_OT_WriteColorAttributes(bpy.types.Operator):
+    bl_idname = "wryc.ot_write_color_attributes"
+    bl_label = "Apply"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.other_tools
+        target_name = props.target_attribute_name.strip()
+
+        if not target_name:
+            self.report({'ERROR'}, "Target attribute name cannot be empty.")
+            return {'CANCELLED'}
+
+        targets = [obj for obj in context.selected_objects if obj.type == 'MESH']
+
+        if not targets:
+            self.report({'ERROR'}, "No target mesh selected")
+            return {'CANCELLED'}
+
+        for obj in targets:
+            mesh = obj.data
+            vert_count = len(mesh.vertices)
+            loop_count = len(mesh.loops)
+            if vert_count == 0:
+                continue
+
+            target_attr = mesh.color_attributes.get(target_name)
+
+            if target_attr and len(target_attr.data) == vert_count:
+                exist_rgba = np.empty(vert_count * 4, dtype=np.float32)
+                target_attr.data.foreach_get("color", exist_rgba)
+                exist_rgba = exist_rgba.reshape(-1, 4)
+            else:
+                exist_rgba = np.zeros((vert_count, 4), dtype=np.float32)
+                exist_rgba[:, 3] = 1.0
+
+            def get_channel_data(attribute_name, channel_index):
+                name = attribute_name.strip()
+                if not name or name not in mesh.color_attributes:
+                    return exist_rgba[:, channel_index]
+
+                attr = mesh.color_attributes[name]
+
+                def calc_intensity(colors_2d):
+                    return (
+                        0.299 * colors_2d[:, 0]
+                        + 0.587 * colors_2d[:, 1]
+                        + 0.114 * colors_2d[:, 2]
+                    ).astype(np.float32)
+
+                if attr.domain == 'POINT' and len(attr.data) == vert_count:
+                    raw = np.empty(vert_count * 4, dtype=np.float32)
+                    attr.data.foreach_get("color", raw)
+                    return calc_intensity(raw.reshape(-1, 4))
+
+                elif attr.domain == 'CORNER' and len(attr.data) == loop_count:
+                    raw = np.empty(loop_count * 4, dtype=np.float32)
+                    attr.data.foreach_get("color", raw)
+                    corner_intensity = calc_intensity(raw.reshape(-1, 4))
+
+                    loop_vert_indices = np.empty(loop_count, dtype=np.int32)
+                    mesh.loops.foreach_get("vertex_index", loop_vert_indices)
+
+                    vert_vals = np.zeros(vert_count, dtype=np.float32)
+                    vert_vals[loop_vert_indices] = corner_intensity
+                    return vert_vals
+
+                return exist_rgba[:, channel_index]
+
+            r_channel = get_channel_data(props.source_r_name, 0)
+            g_channel = get_channel_data(props.source_g_name, 1)
+            b_channel = get_channel_data(props.source_b_name, 2)
+            a_channel = get_channel_data(props.source_a_name, 3)
+
+            packed = np.column_stack((r_channel, g_channel, b_channel, a_channel)).ravel()
+
+            if not target_attr:
+                target_attr = mesh.color_attributes.new(name=target_name, type='BYTE_COLOR', domain='POINT')
+            elif target_attr.domain != 'POINT' or target_attr.data_type != 'BYTE_COLOR':
+                mesh.color_attributes.remove(target_attr)
+                target_attr = mesh.color_attributes.new(name=target_name, type='BYTE_COLOR', domain='POINT')
+
+            target_attr.data.foreach_set("color", packed)
+            mesh.update()
+
+        self.report({'INFO'}, f"Success write color attributes to {target_name}")
+        return {'FINISHED'}
+
 #__Add Manny__
 class WRYC_OT_AddUE5Manny(bpy.types.Operator):
     bl_idname = "wryc.ot_add_ue5_manny"
@@ -2293,4 +2466,3 @@ class WRYC_OT_AddUE5Manny(bpy.types.Operator):
 
         self.report({'INFO'}, "UE Manny Imported")
         return {'FINISHED'}
-
